@@ -69,10 +69,10 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // Refs
     const searchInputRef = useRef<HTMLInputElement>(null);
 
-    // Filtrado visual (para la grilla), excluye búsqueda exacta si ya se procesó
+    // Filtrado visual (solo para mostrar en pantalla, NO afecta la lógica de escaneo)
     const filteredProducts = products.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        p.sku.includes(searchTerm)
+        String(p.sku).includes(searchTerm)
     );
 
     // --- CÁLCULOS ---
@@ -99,24 +99,26 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- ACCIONES ---
 
     const addToCart = (product: Product) => {
-        // Validación estricta de stock numérico
         const availableStock = Number(product.stock || 0);
 
         if (availableStock <= 0) {
             alert(`El producto "${product.name}" no tiene stock disponible.`);
+            setSearchTerm(''); // Limpiar input si falla
             return;
         }
 
         const existing = cart.find(i => i.product.id === product.id);
         
         if (existing) {
-            // Verificar si al sumar 1 superamos el stock
+            // Si el producto ya existe (mismo ID), verificamos si podemos agregar más
             if (existing.qty >= availableStock) {
                  alert(`Límite de stock alcanzado para "${product.name}".\n\nEn carrito: ${existing.qty}\nDisponible: ${availableStock}`);
+                 setSearchTerm('');
                  return;
             }
             setCart(cart.map(i => i.product.id === product.id ? {...i, qty: i.qty + 1} : i));
         } else {
+            // Si es un producto nuevo (diferente ID, aunque tenga el mismo nombre), lo agregamos
             setCart([...cart, {product, qty: 1}]);
         }
     };
@@ -125,42 +127,46 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         setCart(cart.filter(i => i.product.id !== productId));
     };
 
-    // Manejador del Escáner (Enter)
+    // --- LÓGICA DE ESCANEO ESTRICTA ---
+    const processSearch = () => {
+        const term = searchTerm.trim();
+        if (!term) return;
+
+        // 1. BÚSQUEDA EXACTA POR SKU (IMEI)
+        // Convertimos ambos a string y limpiamos espacios para asegurar coincidencia
+        const exactImeiMatch = products.find(p => String(p.sku).trim() === term);
+
+        if (exactImeiMatch) {
+            addToCart(exactImeiMatch);
+            setSearchTerm('');
+            // Mantenemos el foco
+            setTimeout(() => searchInputRef.current?.focus(), 10);
+            return;
+        }
+        
+        // 2. BÚSQUEDA EXACTA POR ID (Fallback interno)
+        const exactIdMatch = products.find(p => String(p.id).trim() === term);
+        if (exactIdMatch) {
+            addToCart(exactIdMatch);
+            setSearchTerm('');
+            setTimeout(() => searchInputRef.current?.focus(), 10);
+            return;
+        }
+
+        // IMPORTANTE: Hemos ELIMINADO la lógica de "si queda solo uno en el filtro, agrégalo".
+        // Esto causaba que al escanear un IMEI nuevo, si no lo encontraba, seleccionara el anterior
+        // si coincidían en nombre, provocando el error de stock duplicado.
+    };
+
+    const handleSearchSubmit = (e: React.FormEvent) => {
+        e.preventDefault(); // Detiene recarga del formulario
+        processSearch();
+    };
+
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        // La prevención del formulario global se maneja en el onSubmit del form, 
-        // pero mantenemos esto por seguridad adicional.
         if (e.key === 'Enter') {
-            e.preventDefault(); 
-            
-            const term = searchTerm.trim();
-            if (!term) return;
-
-            // 1. PRIORIDAD MÁXIMA: Coincidencia EXACTA de SKU (IMEI)
-            // Esto es crucial para SIMCARDS u otros productos donde el código es único.
-            const exactImeiMatch = products.find(p => p.sku === term);
-
-            if (exactImeiMatch) {
-                addToCart(exactImeiMatch);
-                setSearchTerm(''); // Limpiar inmediatamente para el siguiente escaneo
-                return;
-            } 
-            
-            // 2. Si no es IMEI exacto, buscamos coincidencia exacta por ID interno (fallback)
-            const exactIdMatch = products.find(p => p.id === term);
-            if (exactIdMatch) {
-                addToCart(exactIdMatch);
-                setSearchTerm('');
-                return;
-            }
-
-            // 3. Si no hay coincidencia exacta, verificamos si el filtro visual arroja un único resultado
-            if (filteredProducts.length === 1) {
-                addToCart(filteredProducts[0]);
-                setSearchTerm('');
-                return;
-            }
-
-            // Si hay múltiples resultados o ninguno, no hacemos nada y dejamos que el usuario seleccione visualmente.
+            e.preventDefault(); // Detiene comportamiento por defecto
+            processSearch();
         }
     };
 
@@ -451,7 +457,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                             <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
                             
                             {/* FORMULARIO CRÍTICO: Previene el reload por defecto al presionar ENTER en escáneres */}
-                            <form onSubmit={(e) => e.preventDefault()}>
+                            <form onSubmit={handleSearchSubmit}>
                                 <input 
                                     ref={searchInputRef}
                                     type="text"
@@ -460,6 +466,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
                                     onKeyDown={handleSearchKeyDown}
+                                    autoComplete="off"
                                     autoFocus
                                 />
                             </form>
