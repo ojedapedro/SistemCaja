@@ -99,7 +99,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* Sales Trend */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden min-w-0">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Tendencia de Ventas</h3>
           {/* Explicit height style is critical to prevent Recharts -1 width error */}
           <div style={{ width: '100%', height: 300 }}>
@@ -119,7 +119,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
         </div>
 
         {/* Top Products */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden min-w-0">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Lo Más Vendido</h3>
           <div style={{ width: '100%', height: 300 }}>
              <ResponsiveContainer width="100%" height="100%">

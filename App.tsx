@@ -13,7 +13,9 @@ import {
   Users,
   UserCircle,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { Product, Sale, Purchase, Return, ViewState, ExternalApp, Customer, User, Role } from './types';
 import Dashboard from './components/Dashboard';
@@ -25,7 +27,7 @@ import CustomersView from './components/CustomersView';
 import SalesView from './components/SalesView';
 import PurchasesView from './components/PurchasesView';
 import InventoryView from './components/InventoryView';
-import { fetchAllData, api, wait } from './services/api';
+import { fetchAllData, api } from './services/api';
 
 // -- INLINE COMPONENTS --
 
@@ -75,8 +77,7 @@ const App: React.FC = () => {
         setUsers(data.users || []);
         setApps(data.apps || []);
     } catch (e) {
-        console.error("Critical Failure in loadData (Should be handled by api.ts)", e);
-        // Even if everything explodes, don't crash the UI
+        console.error("Critical Failure in loadData", e);
     } finally {
         setIsLoading(false);
         setIsSyncing(false);
@@ -86,7 +87,6 @@ const App: React.FC = () => {
   // Auth Handler
   const handleLogin = (user: User) => {
     setCurrentUser(user);
-    // Redirect based on role
     if (user.role === 'warehouse') setCurrentView('inventory');
     else if (user.role === 'seller') setCurrentView('sales');
     else setCurrentView('dashboard');
@@ -97,96 +97,88 @@ const App: React.FC = () => {
   };
 
   // Handlers
-  const handleNewSale = async (sale: Sale, customer?: Customer) => {
-    // --- 1. ACTUALIZACIÓN VISUAL INMEDIATA (OPTIMISTA) ---
-    // Actualizamos el estado de React PRIMERO para que la UI no parpadee ni se ponga gris.
+  const handleNewSale = (sale: Sale, customer?: Customer) => {
+    console.log("Procesando nueva venta...", sale.id);
+
+    // --- 1. OPTIMISTIC UPDATE (UI) ---
+    // This updates the React state IMMEDIATELY so the user sees the stock go down.
     
-    // 1.1 Registrar Cliente localmente
+    // 1.1 Update Customer State
     if (customer && customer.id) {
-        const existingCustomer = customers.find(c => c.id === customer.id);
-        if (!existingCustomer) {
-            setCustomers(prev => [...prev, customer]);
-        }
+        const existing = customers.find(c => c.id === customer.id);
+        if (!existing) setCustomers(prev => [...prev, customer]);
     }
 
-    // 1.2 Calcular Nuevo Stock y actualizar UI
+    // 1.2 Update Products Stock
+    // We create a new array to force React re-render, ensuring math is safe
     const newProducts = products.map(p => {
         const soldItem = sale.items.find(i => i.productId === p.id);
         if (soldItem) {
-            // Aseguramos que el stock no sea negativo
-            const currentStock = typeof p.stock === 'number' ? p.stock : 0;
-            const newStock = Math.max(0, currentStock - soldItem.quantity);
+            const currentStock = Number(p.stock) || 0; // Force number
+            const soldQty = Number(soldItem.quantity) || 0; // Force number
+            const newStock = Math.max(0, currentStock - soldQty);
             return { ...p, stock: newStock };
         }
         return p;
     });
     setProducts(newProducts);
 
-    // 1.3 Registrar Venta localmente
+    // 1.3 Update Sales History
     setSales(prev => [...prev, sale]);
 
-    // --- 2. ACTUALIZACIÓN EN SEGUNDO PLANO (BACKEND) ---
-    // Ejecutamos esto sin bloquear la UI, pero usamos 'await' secuencial para no saturar Google Sheets
-    
-    try {
-        // 2.1 Guardar Cliente si es nuevo
-        if (customer && customer.id && !customers.find(c => c.id === customer.id)) {
-            await api.createCustomer(customer);
-        }
+    // --- 2. BACKGROUND SYNC (QUEUE) ---
+    // We call the API wrapper which now handles queueing internally.
+    // We do NOT await these calls to block the UI. They run in background.
 
-        // 2.2 Actualizar Stocks (Secuencialmente para evitar errores de bloqueo en GAS)
-        // Iteramos sobre los items vendidos y enviamos la actualización uno por uno
-        for (const item of sale.items) {
-             // Buscamos el nuevo stock que calculamos arriba
-             const product = newProducts.find(p => p.id === item.productId);
-             if (product) {
-                 await api.updateStock(product.id, product.stock);
-                 // Pequeña pausa para dar respiro al script de Google
-                 await wait(200);
-             }
-        }
-
-        // 2.3 Guardar la Venta (Al final, para asegurar que tenemos todo listo)
-        await api.createSale(sale);
-        console.log("Ciclo de venta completado en backend.");
-
-    } catch (error) {
-        console.error("Error en proceso de guardado en segundo plano (Los datos persisten localmente)", error);
-        // No mostramos error al usuario porque la venta ya se "hizo" visualmente.
-        // En una app real, aquí guardaríamos en una cola de reintentos.
+    // 2.1 Sync Customer
+    if (customer && customer.id && !customers.find(c => c.id === customer.id)) {
+        api.createCustomer(customer);
     }
+
+    // 2.2 Sync Stock (For each item)
+    sale.items.forEach(item => {
+        // Find the calculated stock from our safe newProducts array
+        const updatedProduct = newProducts.find(p => p.id === item.productId);
+        if (updatedProduct) {
+             api.updateStock(updatedProduct.id, updatedProduct.stock);
+        }
+    });
+
+    // 2.3 Sync Sale
+    api.createSale(sale);
+    
+    console.log("Venta encolada para sincronización.");
   };
   
   const handleNewPurchase = async (purchase: Purchase) => {
       // Logic to handle new purchase
       await api.createPurchase(purchase);
-      alert("Recepción guardada exitosamente");
-      // Optionally trigger reload or optimistic update for stock
+      alert("Recepción guardada en cola de sincronización");
   };
 
   const handleUpdateStock = async (id: string, newStock: number) => {
       setProducts(products.map(p => p.id === id ? {...p, stock: newStock} : p));
-      await api.updateStock(id, newStock);
+      api.updateStock(id, newStock);
   };
 
   const handleAddCustomer = async (customer: Customer) => {
       setCustomers([...customers, customer]);
-      await api.createCustomer(customer);
+      api.createCustomer(customer);
   };
 
   const handleAddUser = async (user: User) => {
       setUsers([...users, user]);
-      await api.createUser(user);
+      api.createUser(user);
   };
 
   const handleAddApp = async (app: ExternalApp) => {
       setApps([...apps, app]);
-      await api.createApp(app);
+      api.createApp(app);
   };
   
   const handleRemoveApp = async (id: string) => {
       setApps(apps.filter(a => a.id !== id));
-      await api.deleteApp(id);
+      api.deleteApp(id);
   };
 
   // Render Logic
@@ -201,7 +193,6 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    // Pass the users loaded from sheet to the login component, or default admin
     const authUsers = users.length > 0 ? users : [{id:'admin', name:'Admin Local', username:'admin', role:'admin' as Role, password:'123'}];
     return <Login onLogin={handleLogin} users={authUsers} />;
   }
@@ -224,7 +215,6 @@ const App: React.FC = () => {
   if (currentView === 'sales') {
     return (
         <div className="h-screen bg-gray-50 flex font-sans overflow-hidden">
-             {/* Collapsed Sidebar for Sales Mode */}
              <div className="w-16 bg-slate-900 text-white flex flex-col items-center py-4 z-50">
                 <div className="mb-6 font-bold text-blue-400">SC</div>
                 <div className="space-y-4 flex-1">
@@ -273,11 +263,6 @@ const App: React.FC = () => {
                 <NavItem view="inventory" icon={Package} label="Inventario" allowedRoles={['admin', 'warehouse']} />
                 <NavItem view="returns" icon={RotateCcw} label="Devoluciones" allowedRoles={['admin', 'seller']} />
                 <NavItem view="customers" icon={Users} label="Clientes" allowedRoles={['admin', 'seller']} />
-                
-                <div className="pt-4 pb-2">
-                    <div className="h-px bg-slate-800 mx-2"></div>
-                </div>
-                
                 <NavItem view="apps" icon={Grid} label="Aplicaciones" allowedRoles={['admin', 'seller', 'warehouse']} />
                 <NavItem view="users" icon={UserCircle} label="Usuarios" allowedRoles={['admin']} />
             </nav>

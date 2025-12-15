@@ -10,7 +10,7 @@ export interface AppData {
   apps: ExternalApp[];
 }
 
-// --- LOCAL DATA STORE (Fallback) ---
+// --- LOCAL DATA STORE (Fallback & Cache) ---
 let localData: AppData = {
     products: [
         { id: '1', name: 'DEMO: HONOR PLAY 10', price: 80.00, stock: 15, sku: '865573084579937', category: 'Telefonos' },
@@ -61,6 +61,49 @@ const formatSaleForSheet = (sale: Sale) => {
     };
 };
 
+// --- REQUEST QUEUE SYSTEM ---
+// This ensures requests are sent one by one in the background, preventing Google Sheets from locking up.
+const requestQueue: Array<() => Promise<void>> = [];
+let isProcessingQueue = false;
+
+const processQueue = async () => {
+    if (isProcessingQueue) return;
+    isProcessingQueue = true;
+
+    while (requestQueue.length > 0) {
+        const task = requestQueue.shift();
+        if (task) {
+            try {
+                await task();
+            } catch (error) {
+                console.error("Error processing queue item:", error);
+                // We continue processing the rest of the queue even if one fails
+            }
+            // Rate limit: Wait 500ms between requests to be nice to Google Scripts
+            await wait(500); 
+        }
+    }
+    isProcessingQueue = false;
+};
+
+const enqueueRequest = (action: string, sheet: string, data: any) => {
+    console.log(`[Queue] Encolando: ${action} -> ${sheet}`);
+    
+    requestQueue.push(async () => {
+        console.log(`[Network] Enviando: ${action} -> ${sheet}`);
+        await fetch(SHEETS_API_URL, {
+            method: 'POST',
+            mode: 'no-cors', 
+            body: JSON.stringify({ action, sheet, data }),
+            headers: { "Content-Type": "text/plain" },
+            keepalive: true // Crucial: allows request to complete even if tab closes (partially)
+        });
+    });
+    
+    processQueue();
+};
+
+
 // --- API IMPLEMENTATION ---
 
 export const fetchAllData = async (): Promise<AppData> => {
@@ -68,7 +111,7 @@ export const fetchAllData = async (): Promise<AppData> => {
   
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos max
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos max
 
     const response = await fetch(SHEETS_API_URL, {
         method: 'GET',
@@ -96,15 +139,15 @@ export const fetchAllData = async (): Promise<AppData> => {
     return localData;
 
   } catch (error) {
-    console.error("⚠️ Error conectando con la API (Usando modo Offline/Demo):", error);
+    console.error("⚠️ Error conectando con la API (Usando caché/offline):", error);
+    // Return whatever we have in memory
     return localData;
   }
 };
 
 const sendRequest = async (action: string, sheet: string, data: any) => {
-  console.log(`Enviando ${action} a ${sheet}...`, data);
-
-  // 1. Optimistic Update (Local)
+  // 1. Optimistic Update (Local Memory)
+  // We update local data IMMEDIATELY so the user sees the change.
   try {
       if (sheet === 'Sales' && action === 'create') {
           localData.sales.push(data); 
@@ -114,24 +157,11 @@ const sendRequest = async (action: string, sheet: string, data: any) => {
       }
   } catch (e) { console.warn("Error actualizando cache local", e); }
 
-  // 2. Send to Cloud (Robust)
-  try {
-    // Small artificial delay to help with Google Sheets rate limiting when called in loops
-    await wait(100); 
-
-    await fetch(SHEETS_API_URL, {
-      method: 'POST',
-      mode: 'no-cors', 
-      body: JSON.stringify({ action, sheet, data }),
-      headers: { "Content-Type": "text/plain" }, 
-    });
-    console.log("✅ Petición enviada (No-CORS).");
-    return true;
-  } catch (error) {
-    console.error(`❌ Error de red guardando en ${sheet}:`, error);
-    // Return true to prevent UI crashes. The data is saved locally in memory at least.
-    return true; 
-  }
+  // 2. Queue Network Request (Fire & Forget)
+  // We do NOT await this. We let the queue handle it in background.
+  enqueueRequest(action, sheet, data);
+  
+  return true; 
 };
 
 export const api = {
