@@ -11,7 +11,6 @@ export interface AppData {
 }
 
 // --- LOCAL DATA STORE (Fallback) ---
-// Used when API fails so the app doesn't crash
 let localData: AppData = {
     products: [
         { id: '1', name: 'DEMO: HONOR PLAY 10', price: 80.00, stock: 15, sku: '865573084579937', category: 'Telefonos' },
@@ -26,6 +25,8 @@ let localData: AppData = {
 };
 
 // --- HELPERS ---
+
+export const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const parseNumber = (value: any): number => {
     if (typeof value === 'number') return value;
@@ -66,7 +67,6 @@ export const fetchAllData = async (): Promise<AppData> => {
   console.log("Intentando conectar con Google Sheets...");
   
   try {
-    // Intentamos fetch con timeout para no dejar colgada la app
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos max
 
@@ -97,7 +97,6 @@ export const fetchAllData = async (): Promise<AppData> => {
 
   } catch (error) {
     console.error("⚠️ Error conectando con la API (Usando modo Offline/Demo):", error);
-    // FALLBACK GRACEFULLY: Return local/mock data so the app DOES NOT CRASH
     return localData;
   }
 };
@@ -105,31 +104,33 @@ export const fetchAllData = async (): Promise<AppData> => {
 const sendRequest = async (action: string, sheet: string, data: any) => {
   console.log(`Enviando ${action} a ${sheet}...`, data);
 
-  // 1. Update Local Data Optimistically (Simulate persistence)
+  // 1. Optimistic Update (Local)
   try {
       if (sheet === 'Sales' && action === 'create') {
-          localData.sales.push(data); // Note: data here is formatted for sheet, might miss some UI props but enough for simulation
+          localData.sales.push(data); 
       } else if (sheet === 'Products' && action === 'updateStock') {
           const p = localData.products.find(x => x.id === data.id);
           if (p) p.stock = data.stock;
       }
   } catch (e) { console.warn("Error actualizando cache local", e); }
 
-  // 2. Send to Cloud
+  // 2. Send to Cloud (Robust)
   try {
-    // Using 'no-cors' is crucial for GAS POST requests from browser
-    // Content-Type text/plain prevents preflight OPTIONS request
+    // Small artificial delay to help with Google Sheets rate limiting when called in loops
+    await wait(100); 
+
     await fetch(SHEETS_API_URL, {
       method: 'POST',
       mode: 'no-cors', 
       body: JSON.stringify({ action, sheet, data }),
       headers: { "Content-Type": "text/plain" }, 
     });
-    console.log("✅ Petición enviada a la nube (Background).");
+    console.log("✅ Petición enviada (No-CORS).");
     return true;
   } catch (error) {
-    console.error(`❌ Error de red guardando en ${sheet} (Los datos persisten localmente en esta sesión):`, error);
-    return true; // Return true to UI so it doesn't show error to user, since we handled it locally
+    console.error(`❌ Error de red guardando en ${sheet}:`, error);
+    // Return true to prevent UI crashes. The data is saved locally in memory at least.
+    return true; 
   }
 };
 

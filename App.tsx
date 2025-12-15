@@ -25,7 +25,7 @@ import CustomersView from './components/CustomersView';
 import SalesView from './components/SalesView';
 import PurchasesView from './components/PurchasesView';
 import InventoryView from './components/InventoryView';
-import { fetchAllData, api } from './services/api';
+import { fetchAllData, api, wait } from './services/api';
 
 // -- INLINE COMPONENTS --
 
@@ -98,35 +98,63 @@ const App: React.FC = () => {
 
   // Handlers
   const handleNewSale = async (sale: Sale, customer?: Customer) => {
-    // 1. Handle Customer (Auto-register if new)
+    // --- 1. ACTUALIZACIÓN VISUAL INMEDIATA (OPTIMISTA) ---
+    // Actualizamos el estado de React PRIMERO para que la UI no parpadee ni se ponga gris.
+    
+    // 1.1 Registrar Cliente localmente
     if (customer && customer.id) {
         const existingCustomer = customers.find(c => c.id === customer.id);
         if (!existingCustomer) {
-            // Optimistic update for customers
             setCustomers(prev => [...prev, customer]);
-            // API call to create customer
-            api.createCustomer(customer).catch(err => {
-                console.error("Failed to auto-create customer", err);
-            });
         }
     }
 
-    // 2. Handle Stock Updates
+    // 1.2 Calcular Nuevo Stock y actualizar UI
     const newProducts = products.map(p => {
         const soldItem = sale.items.find(i => i.productId === p.id);
         if (soldItem) {
-            const newStock = Math.max(0, p.stock - soldItem.quantity);
-            // Async update stock in backend
-            api.updateStock(p.id, newStock); 
+            // Aseguramos que el stock no sea negativo
+            const currentStock = typeof p.stock === 'number' ? p.stock : 0;
+            const newStock = Math.max(0, currentStock - soldItem.quantity);
             return { ...p, stock: newStock };
         }
         return p;
     });
     setProducts(newProducts);
 
-    // 3. Handle Sale Creation
-    setSales([...sales, sale]); // Optimistic
-    await api.createSale(sale);
+    // 1.3 Registrar Venta localmente
+    setSales(prev => [...prev, sale]);
+
+    // --- 2. ACTUALIZACIÓN EN SEGUNDO PLANO (BACKEND) ---
+    // Ejecutamos esto sin bloquear la UI, pero usamos 'await' secuencial para no saturar Google Sheets
+    
+    try {
+        // 2.1 Guardar Cliente si es nuevo
+        if (customer && customer.id && !customers.find(c => c.id === customer.id)) {
+            await api.createCustomer(customer);
+        }
+
+        // 2.2 Actualizar Stocks (Secuencialmente para evitar errores de bloqueo en GAS)
+        // Iteramos sobre los items vendidos y enviamos la actualización uno por uno
+        for (const item of sale.items) {
+             // Buscamos el nuevo stock que calculamos arriba
+             const product = newProducts.find(p => p.id === item.productId);
+             if (product) {
+                 await api.updateStock(product.id, product.stock);
+                 // Pequeña pausa para dar respiro al script de Google
+                 await wait(200);
+             }
+        }
+
+        // 2.3 Guardar la Venta (Al final, para asegurar que tenemos todo listo)
+        await api.createSale(sale);
+        console.log("Ciclo de venta completado en backend.");
+
+    } catch (error) {
+        console.error("Error en proceso de guardado en segundo plano (Los datos persisten localmente)", error);
+        // No mostramos error al usuario porque la venta ya se "hizo" visualmente.
+        // En una app real, aquí guardaríamos en una cola de reintentos.
+    }
   };
   
   const handleNewPurchase = async (purchase: Purchase) => {
