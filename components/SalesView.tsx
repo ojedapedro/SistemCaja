@@ -50,12 +50,6 @@ const calculatePaymentDates = (startDate: Date, installments: number) => {
     return dates;
 };
 
-// Determina si un producto debe tratarse como único (no agrupable por defecto)
-const isUniqueItem = (category: string) => {
-    const c = (category || '').toLowerCase();
-    return c.includes('telefon') || c.includes('celular') || c.includes('sim') || c.includes('movil');
-};
-
 const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) => {
     // Estado Global de Venta
     const [cart, setCart] = useState<{product: Product, qty: number}[]>([]);
@@ -76,7 +70,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // Refs
     const searchInputRef = useRef<HTMLInputElement>(null);
 
-    // Filtrado visual (solo para mostrar en pantalla, NO afecta la lógica de escaneo)
+    // Filtrado visual
     const filteredProducts = products.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         String(p.sku).includes(searchTerm)
@@ -107,8 +101,8 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     const addToCart = (product: Product) => {
         const availableStock = Number(product.stock || 0);
+        // Normalizamos SKU para evitar errores por espacios
         const productSku = String(product.sku).trim(); 
-        const isUnique = isUniqueItem(product.category);
 
         if (availableStock <= 0) {
             alert(`El producto "${product.name}" no tiene stock disponible.`);
@@ -116,64 +110,60 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             return;
         }
 
-        // LÓGICA HÍBRIDA DE AGRUPACIÓN:
-        // 1. Primero buscamos si ESTE producto exacto (mismo ID) ya está en el carrito.
-        let existingIndex = cart.findIndex(i => i.product.id === product.id);
-
-        // 2. Si no es el mismo ID, pero es un producto NO único (Accesorios) y tiene el mismo SKU, lo agrupamos.
-        //    Esto permite sumar stock de accesorios aunque vengan de filas diferentes (si aplica).
-        //    Para Teléfonos/SIMs (isUnique = true), SOLO agrupamos si es exactamente el mismo ID.
-        if (existingIndex === -1 && !isUnique) {
-            existingIndex = cart.findIndex(i => String(i.product.sku).trim() === productSku);
-        }
-
+        // LÓGICA CORREGIDA:
+        // Buscamos en el carrito ÚNICAMENTE por SKU (IMEI).
+        // Si el SKU ya está, es el mismo producto físico (o tipo de accesorio).
+        const existingIndex = cart.findIndex(i => String(i.product.sku).trim() === productSku);
+        
         if (existingIndex >= 0) {
-            // Ya existe en carrito -> Intentamos sumar cantidad
+            // El SKU ya existe en el carrito.
+            // Esto ocurre normalmente con accesorios (mismo código de barras).
+            // O si intentas escanear el mismo teléfono dos veces.
             const currentQty = cart[existingIndex].qty;
 
-            // Verificamos stock del producto original en base de datos
-            // NOTA: Si agrupamos por SKU diferentes IDs, tomamos el stock del ítem que ya estaba en el carrito.
-            // Para mayor precisión en accesorios, asumimos gestión simple.
-            const itemInCartStock = cart[existingIndex].product.stock;
-
-            if (currentQty + 1 > itemInCartStock) {
-                 alert(`Límite de stock alcanzado para este ítem.\n\nEn carrito: ${currentQty}\nDisponible: ${itemInCartStock}`);
+            // Verificamos stock disponible para este SKU
+            if (currentQty + 1 > availableStock) {
+                 alert(`Límite de stock alcanzado para "${product.name}".\n\nEn carrito: ${currentQty}\nDisponible: ${availableStock}`);
                  setSearchTerm('');
                  return;
             }
 
+            // Incrementamos cantidad
             const newCart = [...cart];
             newCart[existingIndex].qty += 1;
             setCart(newCart);
         } else {
-            // No existe (o es un teléfono/SIM diferente) -> Nueva línea
+            // El SKU NO existe en el carrito.
+            // Esto ocurre cuando escaneas un IMEI nuevo (aunque sea el mismo modelo de teléfono que otro ya escaneado).
+            // Al ser un SKU distinto, se agrega como línea nueva.
             setCart([...cart, {product, qty: 1}]);
         }
     };
 
     const removeFromCart = (index: number) => {
-        // Removemos por índice del array para evitar borrar duplicados visuales incorrectos
+        // Usamos index para borrar la línea exacta, seguro contra duplicados visuales
         const newCart = [...cart];
         newCart.splice(index, 1);
         setCart(newCart);
     };
 
-    // --- LÓGICA DE ESCANEO ESTRICTA ---
+    // --- LÓGICA DE ESCANEO ---
     const processSearch = () => {
         const term = searchTerm.trim();
         if (!term) return;
 
-        // 1. BÚSQUEDA EXACTA POR SKU (IMEI)
+        // 1. Prioridad: BÚSQUEDA EXACTA POR SKU (IMEI)
         const exactImeiMatch = products.find(p => String(p.sku).trim() === term);
 
         if (exactImeiMatch) {
             addToCart(exactImeiMatch);
             setSearchTerm('');
+            // Mantenemos foco sin recargar
             setTimeout(() => searchInputRef.current?.focus(), 10);
             return;
         }
         
-        // 2. BÚSQUEDA EXACTA POR ID (Fallback)
+        // 2. Fallback: BÚSQUEDA EXACTA POR ID INTERNO
         const exactIdMatch = products.find(p => String(p.id).trim() === term);
         if (exactIdMatch) {
             addToCart(exactIdMatch);
@@ -183,10 +173,10 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         }
     };
 
-    // Solo manejamos el evento de tecla, NO un evento submit de formulario
+    // Manejador de teclas para el escáner (Reemplaza al onSubmit)
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
-            e.preventDefault(); // Prevenir cualquier comportamiento nativo
+            e.preventDefault(); // Detiene cualquier acción por defecto del navegador
             e.stopPropagation();
             processSearch();
         }
@@ -359,7 +349,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                 <p className="font-bold text-gray-700">Bs. {(completedSale.total * (completedSale.exchangeRate || 0)).toLocaleString('es-VE')}</p>
                             </div>
 
-                             {/* Detalle Financiamiento en Recibo */}
                              {completedSale.paymentType === 'credito' && creditPlan && (
                                 <div className="mt-4 text-left bg-gray-50 p-2 rounded border border-dashed border-gray-300 text-xs">
                                     <h4 className="font-bold uppercase mb-1">Financiamiento</h4>
@@ -405,7 +394,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                         </button>
                     </div>
                 </div>
-                 {/* Print Styles (Hidden in UI) */}
                  <style>{`
                     @media print {
                         body * { visibility: hidden; }
@@ -422,7 +410,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- MAIN LAYOUT ---
     return (
         <div className="h-full flex flex-col -m-4 md:-m-8 bg-slate-100">
-            {/* 1. TOP BAR (Floating style) */}
+            {/* 1. TOP BAR */}
             <div className="px-6 py-2">
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex justify-between items-center">
                     <div className="flex items-center gap-3">
@@ -435,7 +423,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                         </div>
                     </div>
 
-                    {/* Tasa de Cambio (Centrada) */}
                     <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-lg border border-slate-200">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tasa BCV</span>
                         <div className="flex items-center gap-1">
@@ -468,7 +455,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                 </div>
             </div>
 
-            {/* 2. WORKSPACE (2 Columns, Centered Layout) */}
+            {/* 2. WORKSPACE */}
             <div className="flex-1 overflow-hidden px-6 pb-6 pt-2 flex gap-6">
                 
                 {/* LEFT PANEL: PRODUCTS */}
@@ -478,7 +465,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                         <div className="relative max-w-xl mx-auto">
                             <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
                             
-                            {/* DIV en lugar de FORM para prevenir recargas */}
+                            {/* REEMPLAZADO FORM POR DIV para evitar recargas */}
                             <div className="relative">
                                 <input 
                                     ref={searchInputRef}
@@ -504,7 +491,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                     onClick={() => addToCart(product)}
                                     className="group bg-white p-4 rounded-xl border border-slate-200 hover:border-blue-300 hover:shadow-md cursor-pointer transition-all duration-200 flex flex-col justify-between h-full relative overflow-hidden"
                                 >
-                                    {/* Stock Badge */}
                                     <div className={`absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full ${product.stock < 5 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
                                         {product.stock} un.
                                     </div>
@@ -534,10 +520,10 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                     </div>
                 </div>
 
-                {/* RIGHT PANEL: CART (Sidebar Style) */}
+                {/* RIGHT PANEL: CART */}
                 <div className="flex-1 max-w-md flex flex-col bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden relative">
                     
-                    {/* CART HEADER: TOTALS */}
+                    {/* CART HEADER */}
                     <div className="bg-slate-900 p-6 text-white relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-4 opacity-10">
                             <ShoppingCart size={100} />
@@ -554,7 +540,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                         </div>
                     </div>
 
-                    {/* CART BODY: ITEMS & INPUTS */}
+                    {/* CART BODY */}
                     <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
                         
                         {/* 1. Items List */}

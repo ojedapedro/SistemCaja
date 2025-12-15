@@ -92,10 +92,10 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* Sales Trend */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Tendencia de Ventas (Mensual)</h3>
-          <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer>
+          <div style={{ width: '100%', height: 300, position: 'relative' }}>
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
@@ -111,10 +111,10 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
         </div>
 
         {/* Top Products */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Lo Más Vendido</h3>
-          <div style={{ width: '100%', height: 300 }}>
-             <ResponsiveContainer>
+          <div style={{ width: '100%', height: 300, position: 'relative' }}>
+             <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={stats.topProducts} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                     <XAxis type="number" hide />
