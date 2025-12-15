@@ -94,8 +94,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
         {/* Sales Trend */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Tendencia de Ventas (Mensual)</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ width: '100%', height: 300 }}>
+            <ResponsiveContainer>
               <BarChart data={stats.chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
@@ -113,8 +113,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
         {/* Top Products */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Lo Más Vendido</h3>
-          <div className="h-64">
-             <ResponsiveContainer width="100%" height="100%">
+          <div style={{ width: '100%', height: 300 }}>
+             <ResponsiveContainer>
                 <LineChart data={stats.topProducts} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                     <XAxis type="number" hide />
@@ -123,7 +123,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
                     <Line type="monotone" dataKey="quantity" stroke="#8884d8" strokeWidth={2} dot={{r: 4}} />
                 </LineChart>
             </ResponsiveContainer>
-             <ul className="mt-4 space-y-2">
+          </div>
+           <ul className="mt-4 space-y-2">
                 {stats.topProducts.map((p, idx) => (
                     <li key={idx} className="flex justify-between text-sm text-gray-600 border-b pb-1 last:border-0">
                         <span>{idx + 1}. {p.name}</span>
@@ -131,7 +132,6 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
                     </li>
                 ))}
             </ul>
-          </div>
         </div>
       </div>
     </div>
