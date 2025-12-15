@@ -2,7 +2,7 @@ import { Product, Sale, Customer, User, ExternalApp, Purchase } from '../types';
 
 // ¡IMPORTANTE! Reemplaza esta URL con la que obtuviste al desplegar tu Google Apps Script
 // Ejemplo: https://script.google.com/macros/s/AKfycbx.../exec
-const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbx.../exec'; 
+const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbzBpTxHOEPqvul1rdyGUESuG8WRcsHhmmDqphIVKRlwTefkeBSYyssPE7javZgLGmA_/exec'; 
 
 // Check if the URL is the placeholder or invalid
 const isConfigured = !SHEETS_API_URL.includes('AKfycbx...') && SHEETS_API_URL.startsWith('http');

@@ -36,4 +36,9 @@ export const createChatSession = (): Chat => {
 export const sendMessageToGemini = async (chat: Chat, message: string) => {
   try {
     const result = await chat.sendMessageStream({ message });
-    return result
+    return result;
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    throw error;
+  }
+};
