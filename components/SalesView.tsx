@@ -112,13 +112,10 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
         // LÓGICA CORREGIDA:
         // Buscamos en el carrito ÚNICAMENTE por SKU (IMEI).
-        // Si el SKU ya está, es el mismo producto físico (o tipo de accesorio).
         const existingIndex = cart.findIndex(i => String(i.product.sku).trim() === productSku);
         
         if (existingIndex >= 0) {
             // El SKU ya existe en el carrito.
-            // Esto ocurre normalmente con accesorios (mismo código de barras).
-            // O si intentas escanear el mismo teléfono dos veces.
             const currentQty = cart[existingIndex].qty;
 
             // Verificamos stock disponible para este SKU
@@ -134,14 +131,11 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             setCart(newCart);
         } else {
             // El SKU NO existe en el carrito.
-            // Esto ocurre cuando escaneas un IMEI nuevo (aunque sea el mismo modelo de teléfono que otro ya escaneado).
-            // Al ser un SKU distinto, se agrega como línea nueva.
             setCart([...cart, {product, qty: 1}]);
         }
     };
 
     const removeFromCart = (index: number) => {
-        // Usamos index para borrar la línea exacta, seguro contra duplicados visuales
         const newCart = [...cart];
         newCart.splice(index, 1);
         setCart(newCart);
@@ -158,7 +152,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         if (exactImeiMatch) {
             addToCart(exactImeiMatch);
             setSearchTerm('');
-            // Mantenemos foco sin recargar
             setTimeout(() => searchInputRef.current?.focus(), 10);
             return;
         }
@@ -173,10 +166,9 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         }
     };
 
-    // Manejador de teclas para el escáner (Reemplaza al onSubmit)
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
-            e.preventDefault(); // Detiene cualquier acción por defecto del navegador
+            e.preventDefault(); 
             e.stopPropagation();
             processSearch();
         }
@@ -233,8 +225,11 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         setTimeout(() => searchInputRef.current?.focus(), 100);
     };
 
+    // CORRECCIÓN PRINCIPAL: Autocompletado solo con coincidencia EXACTA
     const handleCustomerIdChange = (id: string) => {
-        const existing = customers.find(c => c.id === id || c.id.includes(id));
+        // Solo buscamos si el ID es exactamente igual para evitar bloquear la escritura
+        const existing = customers.find(c => c.id === id); 
+        
         if (existing) {
             setSelectedCustomer({
                 id: existing.id,
@@ -242,6 +237,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                 phone: existing.phone
             });
         } else {
+            // Permitimos escribir libremente actualizando solo el ID
             setSelectedCustomer(prev => ({ ...prev, id }));
         }
     };
@@ -465,7 +461,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                         <div className="relative max-w-xl mx-auto">
                             <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
                             
-                            {/* REEMPLAZADO FORM POR DIV para evitar recargas */}
+                            {/* DIV para evitar recargas */}
                             <div className="relative">
                                 <input 
                                     ref={searchInputRef}

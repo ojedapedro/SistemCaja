@@ -74,12 +74,22 @@ const getMockData = (): AppData => ({
 
 export const api = {
   createSale: async (sale: Sale) => {
-    return sendRequest('create', 'Sales', sale);
+    // MODIFICADO: Aplanamos la estructura de items (array) a un string JSON 
+    // para que la hoja de cálculo pueda recibirlo como texto en una sola celda
+    // y no como [object Object]
+    const payload = {
+        ...sale,
+        items: JSON.stringify(sale.items)
+    };
+    return sendRequest('create', 'Sales', payload);
   },
   createPurchase: async (purchase: Purchase) => {
-    // In a real implementation, this would likely also update the 'Products' sheet
-    // to add new stock or new items.
-    return sendRequest('create', 'Purchases', purchase);
+    // Flatten items for sheet storage if needed, similar to Sales
+    const payload = {
+        ...purchase,
+        items: JSON.stringify(purchase.items)
+    };
+    return sendRequest('create', 'Purchases', payload);
   },
   createProduct: async (product: Product) => {
     return sendRequest('create', 'Products', product);
