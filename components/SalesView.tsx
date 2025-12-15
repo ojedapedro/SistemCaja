@@ -4,7 +4,7 @@ import {
     Search, ShoppingCart, Smartphone, CheckCircle, CreditCard, 
     Smartphone as PhoneIcon, Printer, Share2, Download, 
     RefreshCw, Calendar, Edit2, FileText, User, DollarSign, X,
-    Barcode
+    Barcode, AlertCircle
 } from 'lucide-react';
 
 interface SalesViewProps {
@@ -104,33 +104,29 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         // Normalizamos SKU para evitar errores por espacios
         const productSku = String(product.sku).trim(); 
 
-        if (availableStock <= 0) {
-            alert(`El producto "${product.name}" no tiene stock disponible.`);
-            setSearchTerm(''); 
-            return;
+        // 1. Verificar si el producto ya está en el carrito para calcular el total solicitado
+        const existingIndex = cart.findIndex(i => String(i.product.sku).trim() === productSku);
+        const qtyInCart = existingIndex >= 0 ? cart[existingIndex].qty : 0;
+        
+        // La cantidad total que tendríamos si agregamos este ítem
+        const requestedTotal = qtyInCart + 1;
+
+        // 2. Validación Estricta de Stock
+        if (requestedTotal > availableStock) {
+             alert(`🚫 STOCK INSUFICIENTE\n\nProducto: ${product.name}\nDisponible en inventario: ${availableStock}\nYa en carrito: ${qtyInCart}\n\nNo se puede agregar más.`);
+             setSearchTerm(''); 
+             setTimeout(() => searchInputRef.current?.focus(), 50);
+             return;
         }
 
-        // LÓGICA CORREGIDA:
-        // Buscamos en el carrito ÚNICAMENTE por SKU (IMEI).
-        const existingIndex = cart.findIndex(i => String(i.product.sku).trim() === productSku);
-        
+        // 3. Agregar o Actualizar Carrito
         if (existingIndex >= 0) {
-            // El SKU ya existe en el carrito.
-            const currentQty = cart[existingIndex].qty;
-
-            // Verificamos stock disponible para este SKU
-            if (currentQty + 1 > availableStock) {
-                 alert(`Límite de stock alcanzado para "${product.name}".\n\nEn carrito: ${currentQty}\nDisponible: ${availableStock}`);
-                 setSearchTerm('');
-                 return;
-            }
-
-            // Incrementamos cantidad
+            // El SKU ya existe en el carrito, aumentamos cantidad
             const newCart = [...cart];
             newCart[existingIndex].qty += 1;
             setCart(newCart);
         } else {
-            // El SKU NO existe en el carrito.
+            // Nueva línea
             setCart([...cart, {product, qty: 1}]);
         }
     };
@@ -481,18 +477,30 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                     {/* Products Grid */}
                     <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 custom-scrollbar">
                         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {filteredProducts.map(product => (
+                            {filteredProducts.map(product => {
+                                const isOutOfStock = product.stock <= 0;
+                                return (
                                 <div 
                                     key={product.id}
-                                    onClick={() => addToCart(product)}
-                                    className="group bg-white p-4 rounded-xl border border-slate-200 hover:border-blue-300 hover:shadow-md cursor-pointer transition-all duration-200 flex flex-col justify-between h-full relative overflow-hidden"
+                                    onClick={() => !isOutOfStock && addToCart(product)}
+                                    className={`group bg-white p-4 rounded-xl border border-slate-200 transition-all duration-200 flex flex-col justify-between h-full relative overflow-hidden 
+                                        ${isOutOfStock ? 'opacity-60 grayscale cursor-not-allowed bg-gray-50' : 'hover:border-blue-300 hover:shadow-md cursor-pointer'}
+                                    `}
                                 >
-                                    <div className={`absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full ${product.stock < 5 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                                    <div className={`absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full ${isOutOfStock ? 'bg-gray-200 text-gray-500' : product.stock < 5 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
                                         {product.stock} un.
                                     </div>
+                                    
+                                    {isOutOfStock && (
+                                        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                                            <div className="bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-200 shadow-sm flex items-center gap-1 text-xs font-bold text-gray-500">
+                                                <AlertCircle size={12} /> AGOTADO
+                                            </div>
+                                        </div>
+                                    )}
 
                                     <div className="flex flex-col items-center text-center mt-2 mb-4">
-                                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors mb-3">
+                                        <div className={`w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-3 ${!isOutOfStock && 'group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors'}`}>
                                             <Smartphone size={24} strokeWidth={1.5} />
                                         </div>
                                         <h3 className="font-bold text-slate-700 text-sm leading-snug line-clamp-2">{product.name}</h3>
@@ -511,7 +519,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                         </div>
                                     </div>
                                 </div>
-                            ))}
+                            )})}
                         </div>
                     </div>
                 </div>

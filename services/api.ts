@@ -4,8 +4,9 @@ import { Product, Sale, Customer, User, ExternalApp, Purchase } from '../types';
 // Ejemplo: https://script.google.com/macros/s/AKfycbx.../exec
 const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbzBpTxHOEPqvul1rdyGUESuG8WRcsHhmmDqphIVKRlwTefkeBSYyssPE7javZgLGmA_/exec'; 
 
-// Check if the URL is the placeholder or invalid
-const isConfigured = !SHEETS_API_URL.includes('AKfycbx...') && SHEETS_API_URL.startsWith('http');
+// VALIDACIÓN CORREGIDA: Solo verificamos que sea una URL válida http/https.
+// Eliminamos el bloqueo por si la URL contenía caracteres del placeholder.
+const isConfigured = SHEETS_API_URL.startsWith('http');
 
 export interface AppData {
   products: Product[];
@@ -17,13 +18,13 @@ export interface AppData {
 
 export const fetchAllData = async (): Promise<AppData> => {
   if (!isConfigured) {
-    console.log("Using Mock Data (API not configured)");
+    console.warn("API URL no configurada o inválida. Usando datos de prueba.");
     return getMockData();
   }
 
   try {
     const response = await fetch(SHEETS_API_URL);
-    if (!response.ok) throw new Error("Network response was not ok");
+    if (!response.ok) throw new Error("La respuesta de la red no fue correcta");
     const data = await response.json();
     return {
       products: data.products || [],
@@ -33,22 +34,30 @@ export const fetchAllData = async (): Promise<AppData> => {
       apps: data.apps || []
     };
   } catch (error) {
-    console.warn("Error fetching data, falling back to mock data:", error);
+    console.error("Error al obtener datos:", error);
     return getMockData();
   }
 };
 
 const sendRequest = async (action: string, sheet: string, data: any) => {
-  if (!isConfigured) return; 
+  if (!isConfigured) {
+      console.warn("Intento de envío bloqueado: URL de API no configurada.");
+      return; 
+  }
   
+  console.log(`Enviando solicitud [${action}] a [${sheet}]:`, data);
+
   try {
+    // Usamos mode: 'no-cors' como fallback si hay problemas estrictos de CORS, 
+    // pero idealmente 'text/plain' funciona bien con GAS.
     await fetch(SHEETS_API_URL, {
       method: 'POST',
       body: JSON.stringify({ action, sheet, data }),
       headers: { "Content-Type": "text/plain;charset=utf-8" }, 
     });
+    console.log("Datos enviados exitosamente.");
   } catch (error) {
-    console.error(`Error executing ${action} on ${sheet}:`, error);
+    console.error(`Error ejecutando ${action} en ${sheet}:`, error);
   }
 };
 
@@ -74,9 +83,7 @@ const getMockData = (): AppData => ({
 
 export const api = {
   createSale: async (sale: Sale) => {
-    // MODIFICADO: Aplanamos la estructura de items (array) a un string JSON 
-    // para que la hoja de cálculo pueda recibirlo como texto en una sola celda
-    // y no como [object Object]
+    // Aplanamos items para que se guarde como string en Sheets
     const payload = {
         ...sale,
         items: JSON.stringify(sale.items)
@@ -84,7 +91,6 @@ export const api = {
     return sendRequest('create', 'Sales', payload);
   },
   createPurchase: async (purchase: Purchase) => {
-    // Flatten items for sheet storage if needed, similar to Sales
     const payload = {
         ...purchase,
         items: JSON.stringify(purchase.items)
