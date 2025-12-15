@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { Lock, User as UserIcon } from 'lucide-react';
+import { Lock, User as UserIcon, Database } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -14,13 +14,32 @@ const Login: React.FC<LoginProps> = ({ onLogin, users }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const user = users.find(u => u.username === username && u.password === password);
+    setError('');
+
+    // 1. Normalizar entradas (quitar espacios y convertir a string)
+    const inputUser = username.trim(); 
+    const inputPass = password.trim();
+
+    console.log("Intentando login con:", inputUser, inputPass);
+    console.log("Usuarios disponibles:", users);
+
+    // 2. Búsqueda robusta (Maneja si Sheets devuelve números en vez de texto)
+    const user = users.find(u => {
+        // Convertir valores de BD a String y limpiar espacios
+        const dbUser = String(u.username || '').trim();
+        const dbPass = String(u.password || '').trim();
+        
+        // Comparación (Usuario es case-insensitive, Password es sensible)
+        const isUserMatch = dbUser.toLowerCase() === inputUser.toLowerCase();
+        const isPassMatch = dbPass === inputPass;
+
+        return isUserMatch && isPassMatch;
+    });
     
     if (user) {
-      setError('');
       onLogin(user);
     } else {
-      setError('Credenciales incorrectas');
+      setError('Credenciales incorrectas. Verifique usuario y contraseña.');
     }
   };
 
@@ -42,7 +61,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, users }) => {
                         value={username}
                         onChange={e => setUsername(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="admin"
+                        placeholder="Ingrese su usuario"
                         autoFocus
                     />
                 </div>
@@ -61,7 +80,11 @@ const Login: React.FC<LoginProps> = ({ onLogin, users }) => {
                 </div>
             </div>
 
-            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+            {error && (
+                <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 text-center">
+                    {error}
+                </div>
+            )}
 
             <button 
                 type="submit" 
@@ -71,8 +94,13 @@ const Login: React.FC<LoginProps> = ({ onLogin, users }) => {
             </button>
         </form>
         
-        <div className="mt-6 text-center text-xs text-gray-400">
-            <p>Admin por defecto: admin / 123</p>
+        {/* Debug Info */}
+        <div className="mt-8 pt-4 border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
+            <div className="flex items-center gap-1">
+                <Database size={12} />
+                <span>Base de Datos: {users.length > 0 ? 'Conectada' : 'Local'}</span>
+            </div>
+            <p>Usuarios cargados: {users.length}</p>
         </div>
       </div>
     </div>
