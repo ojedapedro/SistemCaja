@@ -66,6 +66,9 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     const [completedSale, setCompletedSale] = useState<Sale | null>(null);
     const [showReceipt, setShowReceipt] = useState(false);
 
+    // Refs
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
     const filteredProducts = products.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         p.sku.includes(searchTerm)
@@ -95,10 +98,16 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- ACCIONES ---
 
     const addToCart = (product: Product) => {
-        if (product.stock <= 0) return;
+        if (product.stock <= 0) {
+            alert("Producto sin stock");
+            return;
+        }
         const existing = cart.find(i => i.product.id === product.id);
         if (existing) {
-            if (existing.qty >= product.stock) return;
+            if (existing.qty >= product.stock) {
+                 alert("No hay más stock disponible de este producto");
+                 return;
+            }
             setCart(cart.map(i => i.product.id === product.id ? {...i, qty: i.qty + 1} : i));
         } else {
             setCart([...cart, {product, qty: 1}]);
@@ -107,6 +116,31 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     const removeFromCart = (productId: string) => {
         setCart(cart.filter(i => i.product.id !== productId));
+    };
+
+    // Manejador del Escáner (Enter)
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // IMPORTANTE: Evita que la página se recargue o envíe formulario
+            
+            const term = searchTerm.trim();
+            if (!term) return;
+
+            // 1. Buscar coincidencia exacta por SKU (Prioridad Escáner)
+            const exactMatch = products.find(p => p.sku === term || p.id === term);
+
+            if (exactMatch) {
+                addToCart(exactMatch);
+                setSearchTerm(''); // Limpiar para el siguiente escaneo
+            } else if (filteredProducts.length === 1) {
+                // 2. Si no es exacta pero el filtro muestra uno solo, agregarlo
+                addToCart(filteredProducts[0]);
+                setSearchTerm('');
+            }
+            
+            // Mantener el foco siempre
+            setTimeout(() => searchInputRef.current?.focus(), 10);
+        }
     };
 
     const handleCheckout = () => {
@@ -157,6 +191,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         setCompletedSale(null);
         setShowReceipt(false);
         setPaymentTab('contado');
+        setTimeout(() => searchInputRef.current?.focus(), 100);
     };
 
     const handleCustomerIdChange = (id: string) => {
@@ -393,11 +428,13 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                         <div className="relative max-w-xl mx-auto">
                             <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
                             <input 
+                                ref={searchInputRef}
                                 type="text"
-                                placeholder="Buscar productos por nombre, código o categoría..."
+                                placeholder="Escanear código o buscar producto..."
                                 className="w-full bg-slate-50 border-none rounded-xl pl-12 pr-4 py-3 text-slate-700 focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all outline-none font-medium"
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
+                                onKeyDown={handleSearchKeyDown}
                                 autoFocus
                             />
                         </div>
@@ -477,7 +514,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                             {cart.length === 0 ? (
                                 <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
                                     <ShoppingCart className="mx-auto mb-2 opacity-50" size={24} />
-                                    <p className="text-sm">Agrega productos</p>
+                                    <p className="text-sm">Escanea o selecciona productos</p>
                                 </div>
                             ) : (
                                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
