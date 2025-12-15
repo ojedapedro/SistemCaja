@@ -69,6 +69,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // Refs
     const searchInputRef = useRef<HTMLInputElement>(null);
 
+    // Filtrado visual (para la grilla), excluye búsqueda exacta si ya se procesó
     const filteredProducts = products.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         p.sku.includes(searchTerm)
@@ -98,7 +99,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- ACCIONES ---
 
     const addToCart = (product: Product) => {
-        // CORRECCIÓN CRÍTICA: Forzar conversión a número para evitar errores de comparación string vs number
+        // Validación estricta de stock numérico
         const availableStock = Number(product.stock || 0);
 
         if (availableStock <= 0) {
@@ -126,26 +127,40 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     // Manejador del Escáner (Enter)
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        // La prevención del formulario global se maneja en el onSubmit del form, 
+        // pero mantenemos esto por seguridad adicional.
         if (e.key === 'Enter') {
-            e.preventDefault(); // IMPORTANTE: Evita que la página se recargue o envíe formulario
+            e.preventDefault(); 
             
             const term = searchTerm.trim();
             if (!term) return;
 
-            // 1. Buscar coincidencia exacta por SKU (Prioridad Escáner)
-            const exactMatch = products.find(p => p.sku === term || p.id === term);
+            // 1. PRIORIDAD MÁXIMA: Coincidencia EXACTA de SKU (IMEI)
+            // Esto es crucial para SIMCARDS u otros productos donde el código es único.
+            const exactImeiMatch = products.find(p => p.sku === term);
 
-            if (exactMatch) {
-                addToCart(exactMatch);
-                setSearchTerm(''); // Limpiar para el siguiente escaneo
-            } else if (filteredProducts.length === 1) {
-                // 2. Si no es exacta pero el filtro muestra uno solo, agregarlo
+            if (exactImeiMatch) {
+                addToCart(exactImeiMatch);
+                setSearchTerm(''); // Limpiar inmediatamente para el siguiente escaneo
+                return;
+            } 
+            
+            // 2. Si no es IMEI exacto, buscamos coincidencia exacta por ID interno (fallback)
+            const exactIdMatch = products.find(p => p.id === term);
+            if (exactIdMatch) {
+                addToCart(exactIdMatch);
+                setSearchTerm('');
+                return;
+            }
+
+            // 3. Si no hay coincidencia exacta, verificamos si el filtro visual arroja un único resultado
+            if (filteredProducts.length === 1) {
                 addToCart(filteredProducts[0]);
                 setSearchTerm('');
+                return;
             }
-            
-            // Mantener el foco siempre
-            setTimeout(() => searchInputRef.current?.focus(), 10);
+
+            // Si hay múltiples resultados o ninguno, no hacemos nada y dejamos que el usuario seleccione visualmente.
         }
     };
 
@@ -252,6 +267,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     const PaymentButton = ({ name, label }: { name: string, label: string }) => (
         <button 
+            type="button" // Important: type="button" to prevent form submission
             onClick={() => setPaymentMethod(name)}
             className={`flex flex-col items-center justify-center py-3 rounded-lg border text-xs font-semibold transition-all duration-200
             ${paymentMethod === name 
@@ -433,16 +449,20 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                     <div className="p-4 border-b border-slate-100 bg-white z-10">
                         <div className="relative max-w-xl mx-auto">
                             <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
-                            <input 
-                                ref={searchInputRef}
-                                type="text"
-                                placeholder="Escanear código o buscar producto..."
-                                className="w-full bg-slate-50 border-none rounded-xl pl-12 pr-4 py-3 text-slate-700 focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all outline-none font-medium"
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                onKeyDown={handleSearchKeyDown}
-                                autoFocus
-                            />
+                            
+                            {/* FORMULARIO CRÍTICO: Previene el reload por defecto al presionar ENTER en escáneres */}
+                            <form onSubmit={(e) => e.preventDefault()}>
+                                <input 
+                                    ref={searchInputRef}
+                                    type="text"
+                                    placeholder="Escanear IMEI o buscar producto..."
+                                    className="w-full bg-slate-50 border-none rounded-xl pl-12 pr-4 py-3 text-slate-700 focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all outline-none font-medium"
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    onKeyDown={handleSearchKeyDown}
+                                    autoFocus
+                                />
+                            </form>
                         </div>
                     </div>
 
@@ -465,7 +485,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                             <Smartphone size={24} strokeWidth={1.5} />
                                         </div>
                                         <h3 className="font-bold text-slate-700 text-sm leading-snug line-clamp-2">{product.name}</h3>
-                                        <p className="text-xs text-slate-400 font-mono mt-1">{product.sku}</p>
+                                        <p className="text-xs text-slate-400 font-mono mt-1 break-all">{product.sku}</p>
                                     </div>
 
                                     <div className="mt-auto pt-3 border-t border-slate-50">
@@ -530,7 +550,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                                 <span className="bg-white text-slate-700 w-6 h-6 flex items-center justify-center rounded text-xs font-bold border border-slate-200 shadow-sm">{item.qty}</span>
                                                 <div className="truncate">
                                                     <p className="text-sm font-medium text-slate-700 truncate">{item.product.name}</p>
-                                                    <p className="text-[10px] text-slate-400">${item.product.price}/u</p>
+                                                    <p className="text-[10px] text-slate-400">${item.product.price}/u <span className="text-gray-400">| {item.product.sku}</span></p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3">
