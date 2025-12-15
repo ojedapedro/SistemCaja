@@ -1,7 +1,6 @@
 import { Product, Sale, Customer, User, ExternalApp, Purchase } from '../types';
 
-// ¡IMPORTANTE! Reemplaza esta URL con la que obtuviste al desplegar tu Google Apps Script
-// La URL debe terminar en /exec y tener permisos de "Anyone" (Cualquiera).
+// URL actualizada basada en tu reporte de error
 const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbzBpTxHOEPqvul1rdyGUESuG8WRcsHhmmDqphIVKRlwTefkeBSYyssPE7javZgLGmA_/exec'; 
 
 // VALIDACIÓN: Evita intentar conectar si la URL es el ejemplo (placeholder) o no es HTTP.
@@ -63,7 +62,8 @@ export const fetchAllData = async (): Promise<AppData> => {
   }
 
   try {
-    // GET request: No enviar headers personalizados para evitar Preflight CORS (OPTIONS) que falla en GAS.
+    // GET request: Necesitamos leer la respuesta, así que NO usamos no-cors.
+    // Si esto falla, verifica que el script tenga permisos "Anyone" (Cualquiera).
     const response = await fetch(SHEETS_API_URL, {
         method: 'GET',
         redirect: 'follow'
@@ -88,8 +88,7 @@ export const fetchAllData = async (): Promise<AppData> => {
     return { products, sales, customers, users, apps };
 
   } catch (error) {
-    console.error("Error conectando con Google Sheets. Verifique URL y despliegue como 'Anyone'.", error);
-    // Retornamos mock data para que la app no se rompa visualmente
+    console.error("Error conectando con Google Sheets. Verifique permisos del Script (Deploy as Web App -> Who has access: Anyone).", error);
     return getMockData();
   }
 };
@@ -100,19 +99,25 @@ const sendRequest = async (action: string, sheet: string, data: any) => {
       return;
   }
   
-  console.log(`Enviando a ${sheet}...`);
+  console.log(`Enviando a ${sheet}...`, data);
 
   try {
-    // POST request: Usamos no-cors o text/plain para evitar errores complejos de CORS en escrituras
-    // Google Apps Script recibe esto en e.postData.contents
+    // CORRECCIÓN CRÍTICA DE CORS PARA ESCRITURA:
+    // Usamos mode: 'no-cors'. Esto permite enviar los datos sin que el navegador bloquee
+    // la respuesta por falta de cabeceras en la redirección de Google.
+    // DESVENTAJA: La respuesta es 'opaque' (no podemos leer si hubo error 500), 
+    // pero asumimos éxito si fetch no lanza excepción de red.
     await fetch(SHEETS_API_URL, {
       method: 'POST',
+      mode: 'no-cors', 
       body: JSON.stringify({ action, sheet, data }),
-      headers: { "Content-Type": "text/plain;charset=utf-8" }, 
+      headers: { "Content-Type": "text/plain" }, 
     });
-    console.log("Guardado exitoso.");
+    console.log("Guardado enviado (Modo No-CORS).");
+    return true;
   } catch (error) {
-    console.error(`Error guardando datos en ${sheet}:`, error);
+    console.error(`Error de red guardando datos en ${sheet}:`, error);
+    return false;
   }
 };
 
