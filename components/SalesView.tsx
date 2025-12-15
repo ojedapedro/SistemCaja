@@ -98,14 +98,20 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- ACCIONES ---
 
     const addToCart = (product: Product) => {
-        if (product.stock <= 0) {
-            alert("Producto sin stock");
+        // CORRECCIÓN CRÍTICA: Forzar conversión a número para evitar errores de comparación string vs number
+        const availableStock = Number(product.stock || 0);
+
+        if (availableStock <= 0) {
+            alert(`El producto "${product.name}" no tiene stock disponible.`);
             return;
         }
+
         const existing = cart.find(i => i.product.id === product.id);
+        
         if (existing) {
-            if (existing.qty >= product.stock) {
-                 alert("No hay más stock disponible de este producto");
+            // Verificar si al sumar 1 superamos el stock
+            if (existing.qty >= availableStock) {
+                 alert(`Límite de stock alcanzado para "${product.name}".\n\nEn carrito: ${existing.qty}\nDisponible: ${availableStock}`);
                  return;
             }
             setCart(cart.map(i => i.product.id === product.id ? {...i, qty: i.qty + 1} : i));
