@@ -1,0 +1,5 @@
+{
+  "name": "SistemCaja",
+  "description": "Plataforma administrativa integral con gestión de ventas, inventario, compras y lanzador de aplicaciones externas. Incluye asistente IA.",
+  "requestFramePermissions": []
+}
