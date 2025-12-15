@@ -68,15 +68,15 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
         const data = await fetchAllData();
-        setProducts(data.products);
-        setSales(data.sales);
-        setCustomers(data.customers);
-        setUsers(data.users);
-        setApps(data.apps);
+        // Defensive coding: ensure arrays are arrays
+        setProducts(data.products || []);
+        setSales(data.sales || []);
+        setCustomers(data.customers || []);
+        setUsers(data.users || []);
+        setApps(data.apps || []);
     } catch (e) {
-        console.error("Failed to load data", e);
-        // Fallback handled inside fetchAllData, but ensuring safety here
-        setProducts([]);
+        console.error("Critical Failure in loadData (Should be handled by api.ts)", e);
+        // Even if everything explodes, don't crash the UI
     } finally {
         setIsLoading(false);
         setIsSyncing(false);
@@ -107,7 +107,6 @@ const App: React.FC = () => {
             // API call to create customer
             api.createCustomer(customer).catch(err => {
                 console.error("Failed to auto-create customer", err);
-                // In a real app, might want to revert the state change here
             });
         }
     }
@@ -128,15 +127,13 @@ const App: React.FC = () => {
     // 3. Handle Sale Creation
     setSales([...sales, sale]); // Optimistic
     await api.createSale(sale);
-    
-    // Optional: Add notification here
   };
   
   const handleNewPurchase = async (purchase: Purchase) => {
-      // Logic to handle new purchase: e.g., update local state and call API
-      // In a full app, this would also increase stock of products
+      // Logic to handle new purchase
       await api.createPurchase(purchase);
       alert("Recepción guardada exitosamente");
+      // Optionally trigger reload or optimistic update for stock
   };
 
   const handleUpdateStock = async (id: string, newStock: number) => {
@@ -169,7 +166,8 @@ const App: React.FC = () => {
       return (
           <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
               <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
-              <p className="text-gray-500 animate-pulse">Cargando sistema...</p>
+              <p className="text-gray-500 animate-pulse">Conectando con SistemCaja...</p>
+              <p className="text-xs text-gray-400 mt-2">Si tarda mucho, activaremos modo offline.</p>
           </div>
       );
   }

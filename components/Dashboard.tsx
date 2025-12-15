@@ -16,7 +16,11 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
     
     // Monthly sales data for chart
     const salesByMonth = sales.reduce((acc, sale) => {
-      const month = new Date(sale.date).toLocaleString('es-ES', { month: 'short' });
+      const date = new Date(sale.date);
+      // Fallback for invalid dates
+      if (isNaN(date.getTime())) return acc;
+      
+      const month = date.toLocaleString('es-ES', { month: 'short' });
       acc[month] = (acc[month] || 0) + sale.total;
       return acc;
     }, {} as Record<string, number>);
@@ -29,9 +33,12 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
     // Find best sellers
     const productSales: Record<string, number> = {};
     sales.forEach(sale => {
-        sale.items.forEach(item => {
-            productSales[item.name] = (productSales[item.name] || 0) + item.quantity;
-        });
+        // Safe check for items array
+        if(Array.isArray(sale.items)) {
+            sale.items.forEach(item => {
+                productSales[item.name] = (productSales[item.name] || 0) + item.quantity;
+            });
+        }
     });
     
     const topProducts = Object.entries(productSales)
@@ -55,17 +62,17 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-10">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Panel de Control</h2>
-        <span className="text-sm text-gray-500">Última actualización: Ahora</span>
+        <span className="text-sm text-gray-500">Vista General</span>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
             title="Ventas Totales" 
-            value={`$${stats.totalRevenue.toLocaleString()}`} 
+            value={`$${stats.totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
             icon={DollarSign} 
             color="bg-green-500" 
         />
@@ -92,11 +99,12 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* Sales Trend */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col min-w-0">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Tendencia de Ventas (Mensual)</h3>
-          <div className="w-full h-[300px]">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Tendencia de Ventas</h3>
+          {/* Explicit height style is critical to prevent Recharts -1 width error */}
+          <div style={{ width: '100%', height: 300 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.chartData}>
+              <BarChart data={stats.chartData.length > 0 ? stats.chartData : [{name: 'Sin datos', ventas: 0}]}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
@@ -111,11 +119,11 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
         </div>
 
         {/* Top Products */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col min-w-0">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Lo Más Vendido</h3>
-          <div className="w-full h-[300px]">
+          <div style={{ width: '100%', height: 300 }}>
              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={stats.topProducts} layout="vertical">
+                <LineChart data={stats.topProducts.length > 0 ? stats.topProducts : [{name: 'Sin datos', quantity: 0}]} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
@@ -124,13 +132,14 @@ const Dashboard: React.FC<DashboardProps> = ({ sales }) => {
                 </LineChart>
             </ResponsiveContainer>
           </div>
-           <ul className="mt-4 space-y-2">
+           <ul className="mt-4 space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
                 {stats.topProducts.map((p, idx) => (
                     <li key={idx} className="flex justify-between text-sm text-gray-600 border-b pb-1 last:border-0">
-                        <span>{idx + 1}. {p.name}</span>
-                        <span className="font-semibold">{p.quantity} un.</span>
+                        <span className="truncate pr-2">{idx + 1}. {p.name}</span>
+                        <span className="font-semibold whitespace-nowrap">{p.quantity} un.</span>
                     </li>
                 ))}
+                {stats.topProducts.length === 0 && <p className="text-center text-gray-400 text-sm">No hay suficientes datos de ventas.</p>}
             </ul>
         </div>
       </div>
