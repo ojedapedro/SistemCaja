@@ -3,7 +3,8 @@ import { Product, Sale, Customer } from '../types';
 import { 
     Search, ShoppingCart, Smartphone, CheckCircle, CreditCard, 
     Smartphone as PhoneIcon, Printer, Share2, Download, 
-    RefreshCw, Calendar, Edit2, FileText, User, DollarSign, X
+    RefreshCw, Calendar, Edit2, FileText, User, DollarSign, X,
+    Barcode
 } from 'lucide-react';
 
 interface SalesViewProps {
@@ -100,31 +101,43 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     const addToCart = (product: Product) => {
         const availableStock = Number(product.stock || 0);
+        const productSku = String(product.sku).trim(); // Normalizamos SKU
 
         if (availableStock <= 0) {
             alert(`El producto "${product.name}" no tiene stock disponible.`);
-            setSearchTerm(''); // Limpiar input si falla
+            setSearchTerm(''); 
             return;
         }
 
-        const existing = cart.find(i => i.product.id === product.id);
+        // CAMBIO CRÍTICO: Buscar existencia por SKU (IMEI), NO por ID.
+        // Esto permite que productos con diferente ID pero mismo SKU se agrupen (Accesorios)
+        // Y productos con diferente SKU pero mismo ID/Nombre se traten distinto (Teléfonos/SIMs)
+        const existingIndex = cart.findIndex(i => String(i.product.sku).trim() === productSku);
         
-        if (existing) {
-            // Si el producto ya existe (mismo ID), verificamos si podemos agregar más
-            if (existing.qty >= availableStock) {
-                 alert(`Límite de stock alcanzado para "${product.name}".\n\nEn carrito: ${existing.qty}\nDisponible: ${availableStock}`);
+        if (existingIndex >= 0) {
+            // El SKU ya está en el carrito (Ej: Un accesorio escaneado 2 veces)
+            const currentQty = cart[existingIndex].qty;
+
+            // Verificamos stock
+            if (currentQty + 1 > availableStock) {
+                 alert(`Límite de stock alcanzado para este ítem (IMEI/SKU: ${productSku}).\n\nEn carrito: ${currentQty}\nDisponible: ${availableStock}`);
                  setSearchTerm('');
                  return;
             }
-            setCart(cart.map(i => i.product.id === product.id ? {...i, qty: i.qty + 1} : i));
+
+            // Actualizamos cantidad de ESE sku específico
+            const newCart = [...cart];
+            newCart[existingIndex].qty += 1;
+            setCart(newCart);
         } else {
-            // Si es un producto nuevo (diferente ID, aunque tenga el mismo nombre), lo agregamos
+            // Es un SKU nuevo en el carrito (Ej: Un IMEI diferente, aunque sea el mismo modelo de teléfono)
             setCart([...cart, {product, qty: 1}]);
         }
     };
 
-    const removeFromCart = (productId: string) => {
-        setCart(cart.filter(i => i.product.id !== productId));
+    const removeFromCart = (productSku: string) => {
+        // CAMBIO: Remover basado en SKU para ser consistente
+        setCart(cart.filter(i => i.product.sku !== productSku));
     };
 
     // --- LÓGICA DE ESCANEO ESTRICTA ---
@@ -133,18 +146,16 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         if (!term) return;
 
         // 1. BÚSQUEDA EXACTA POR SKU (IMEI)
-        // Convertimos ambos a string y limpiamos espacios para asegurar coincidencia
         const exactImeiMatch = products.find(p => String(p.sku).trim() === term);
 
         if (exactImeiMatch) {
             addToCart(exactImeiMatch);
             setSearchTerm('');
-            // Mantenemos el foco
             setTimeout(() => searchInputRef.current?.focus(), 10);
             return;
         }
         
-        // 2. BÚSQUEDA EXACTA POR ID (Fallback interno)
+        // 2. BÚSQUEDA EXACTA POR ID (Fallback)
         const exactIdMatch = products.find(p => String(p.id).trim() === term);
         if (exactIdMatch) {
             addToCart(exactIdMatch);
@@ -152,20 +163,16 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             setTimeout(() => searchInputRef.current?.focus(), 10);
             return;
         }
-
-        // IMPORTANTE: Hemos ELIMINADO la lógica de "si queda solo uno en el filtro, agrégalo".
-        // Esto causaba que al escanear un IMEI nuevo, si no lo encontraba, seleccionara el anterior
-        // si coincidían en nombre, provocando el error de stock duplicado.
     };
 
     const handleSearchSubmit = (e: React.FormEvent) => {
-        e.preventDefault(); // Detiene recarga del formulario
+        e.preventDefault(); 
         processSearch();
     };
 
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
-            e.preventDefault(); // Detiene comportamiento por defecto
+            e.preventDefault(); 
             processSearch();
         }
     };
@@ -273,7 +280,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     const PaymentButton = ({ name, label }: { name: string, label: string }) => (
         <button 
-            type="button" // Important: type="button" to prevent form submission
+            type="button" 
             onClick={() => setPaymentMethod(name)}
             className={`flex flex-col items-center justify-center py-3 rounded-lg border text-xs font-semibold transition-all duration-200
             ${paymentMethod === name 
@@ -552,17 +559,19 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                             ) : (
                                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                                     {cart.map((item, idx) => (
-                                        <div key={idx} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg group">
+                                        <div key={item.product.sku} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg group">
                                             <div className="flex items-center gap-3 overflow-hidden">
                                                 <span className="bg-white text-slate-700 w-6 h-6 flex items-center justify-center rounded text-xs font-bold border border-slate-200 shadow-sm">{item.qty}</span>
                                                 <div className="truncate">
                                                     <p className="text-sm font-medium text-slate-700 truncate">{item.product.name}</p>
-                                                    <p className="text-[10px] text-slate-400">${item.product.price}/u <span className="text-gray-400">| {item.product.sku}</span></p>
+                                                    <p className="text-[10px] text-slate-400">
+                                                        ${item.product.price}/u <span className="text-gray-400">| <span className="font-mono">{item.product.sku}</span></span>
+                                                    </p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3">
                                                 <span className="font-bold text-slate-700 text-sm">${(item.product.price * item.qty).toFixed(2)}</span>
-                                                <button onClick={() => removeFromCart(item.product.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                                <button onClick={() => removeFromCart(item.product.sku)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
                                                     <X size={14} />
                                                 </button>
                                             </div>
