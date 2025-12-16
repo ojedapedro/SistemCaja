@@ -59,14 +59,14 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
         const data = await fetchAllData();
-        // Solo actualizamos si hay datos válidos, para no borrar el estado local con vacíos por error
+        // Solo actualizamos si hay datos válidos
         if (data.products.length > 0) setProducts(data.products);
         if (data.sales.length > 0) setSales(data.sales);
         if (data.customers.length > 0) setCustomers(data.customers);
         if (data.users.length > 0) setUsers(data.users);
         if (data.apps.length > 0) setApps(data.apps);
     } catch (e) {
-        console.error("Error cargando datos (usando local)", e);
+        console.error("Error cargando datos", e);
     } finally {
         setIsLoading(false);
         setIsSyncing(false);
@@ -84,68 +84,79 @@ const App: React.FC = () => {
     setCurrentUser(null);
   };
 
-  // --- CORE TRANSACTION LOGIC ---
+  // --- LOGICA PRINCIPAL DE VENTA ---
   const handleNewSale = async (sale: Sale, customer?: Customer) => {
     console.log("🚀 Procesando Venta:", sale.id);
 
-    // 1. Calcular el nuevo inventario en MEMORIA
+    // 1. ACTUALIZACIÓN OPTIMISTA (UI INSTANTÁNEA)
+    // Calculamos el nuevo stock inmediatamente para que el usuario lo vea
     const updatedProducts = products.map(p => {
         const itemSold = sale.items.find(i => i.productId === p.id);
         if (itemSold) {
-            // Protección contra NaN y números negativos
             const currentStock = typeof p.stock === 'number' ? p.stock : 0;
             return { ...p, stock: Math.max(0, currentStock - itemSold.quantity) };
         }
         return p;
     });
 
-    // 2. Actualizar UI React Instántaneamente
     setProducts(updatedProducts);
     setSales(prev => [...prev, sale]);
     
+    // Si hay cliente nuevo, lo agregamos localmente
     if (customer && customer.id) {
          if (!customers.find(c => c.id === customer.id)) {
              setCustomers(prev => [...prev, customer]);
          }
     }
 
-    // 3. Enviar transacción al servicio API (Background)
-    // Pasamos los productos YA actualizados para que la API sepa qué stock guardar
-    await api.processSaleTransaction(sale, updatedProducts);
+    // 2. SINCRONIZACIÓN BACKGROUND (NO BLOQUEANTE)
+    // No usamos 'await' bloqueante para la UI, dejamos que corra en background.
     
+    // a. Registrar Venta
+    api.createSale(sale).catch(e => console.error("Error sync venta", e));
+
+    // b. Registrar Cliente
     if (customer) {
-        api.createCustomer(customer);
+        api.createCustomer(customer).catch(e => console.error("Error sync cliente", e));
     }
+
+    // c. Actualizar Stock en Nube (Uno por uno)
+    sale.items.forEach(item => {
+        const p = updatedProducts.find(prod => prod.id === item.productId);
+        if (p) {
+             api.updateStock(p.id, p.stock).catch(console.error);
+        }
+    });
   };
   
   const handleNewPurchase = async (purchase: Purchase) => {
       await api.createPurchase(purchase);
-      // En una app real, aquí también actualizaríamos el stock sumando
+      alert("Compra registrada. Sincronizando en segundo plano.");
   };
 
   const handleUpdateStock = async (id: string, newStock: number) => {
       setProducts(products.map(p => p.id === id ? {...p, stock: newStock} : p));
-      await api.updateStockManual(id, newStock);
+      api.updateStock(id, newStock);
   };
 
   const handleAddCustomer = async (customer: Customer) => {
       setCustomers(prev => [...prev, customer]);
-      await api.createCustomer(customer);
+      api.createCustomer(customer);
   };
 
   const handleAddUser = async (user: User) => {
       setUsers(prev => [...prev, user]);
-      await api.createUser(user);
+      api.createUser(user);
   };
 
   const handleAddApp = async (app: ExternalApp) => {
       setApps(prev => [...prev, app]);
-      await api.createApp(app);
+      api.createApp(app);
   };
   
   const handleRemoveApp = async (id: string) => {
       setApps(prev => prev.filter(a => a.id !== id));
-      await api.deleteApp(id);
+      api.deleteApp(id);
   };
 
   // --- RENDER ---
@@ -160,7 +171,6 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    // Si no hay usuarios cargados (primera vez offline), crear admin por defecto
     const authUsers = users.length > 0 ? users : [{id:'admin', name:'Admin Local', username:'admin', role:'admin' as Role, password:'123'}];
     return <Login onLogin={handleLogin} users={authUsers} />;
   }
