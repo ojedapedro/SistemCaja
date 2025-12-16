@@ -3,7 +3,7 @@ import { Product, Sale, Customer } from '../types';
 import { 
     Search, ShoppingCart, Smartphone, CheckCircle, CreditCard, 
     Smartphone as PhoneIcon, Printer, Share2, 
-    RefreshCw, Edit2, User, X, AlertCircle, MapPin, Mail
+    RefreshCw, Edit2, User, X, AlertCircle, MapPin, Mail, Barcode
 } from 'lucide-react';
 
 interface SalesViewProps {
@@ -46,25 +46,33 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- ACCIONES ---
 
     const addToCart = (product: Product) => {
-        const existingItem = cart.find(i => i.product.id === product.id);
-        const currentQtyInCart = existingItem ? existingItem.qty : 0;
+        // Usamos la forma funcional (prev => ...) para asegurar que siempre trabajamos 
+        // con la versión más reciente del carrito, evitando que se sobrescriban items 
+        // si se escanea muy rápido.
+        setCart(prev => {
+            const existingItem = prev.find(i => i.product.id === product.id);
+            const currentQtyInCart = existingItem ? existingItem.qty : 0;
 
-        if (currentQtyInCart + 1 > product.stock) {
-            alert("⚠️ Stock insuficiente.");
-            return;
-        }
+            if (currentQtyInCart + 1 > product.stock) {
+                // Usamos un pequeño timeout para el alert para no bloquear el renderizado del estado
+                setTimeout(() => alert(`⚠️ Stock insuficiente para ${product.name}. Disponible: ${product.stock}`), 10);
+                return prev;
+            }
 
-        if (existingItem) {
-            setCart(cart.map(i => i.product.id === product.id ? {...i, qty: i.qty + 1} : i));
-        } else {
-            setCart([...cart, {product, qty: 1}]);
-        }
+            if (existingItem) {
+                return prev.map(i => i.product.id === product.id ? {...i, qty: i.qty + 1} : i);
+            } else {
+                return [...prev, {product, qty: 1}];
+            }
+        });
     };
 
     const removeFromCart = (index: number) => {
-        const newCart = [...cart];
-        newCart.splice(index, 1);
-        setCart(newCart);
+        setCart(prev => {
+            const newCart = [...prev];
+            newCart.splice(index, 1);
+            return newCart;
+        });
     };
 
     const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -72,13 +80,17 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             const term = searchTerm.trim().toLowerCase();
             if(!term) return;
 
-            // Búsqueda exacta (Barcode scan)
+            // Búsqueda exacta (Barcode scan o IMEI)
             const exact = products.find(p => p.sku.toLowerCase() === term || p.id === term);
+            
             if (exact) {
                 addToCart(exact);
-                setSearchTerm('');
+                setSearchTerm(''); // Limpiar para el siguiente escaneo
+                // Mantener el foco
                 return;
             }
+            
+            // Si no es exacto, no hacemos nada (el usuario filtra visualmente en el grid)
         }
     };
 
@@ -119,7 +131,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
         const customerToSave: Customer | undefined = customerData.name ? {
             ...customerData,
-            id: customerData.id || `C-${Date.now()}` // Generar ID si no tiene cédula
+            id: customerData.id || `C-${Date.now()}`
         } : undefined;
 
         onSale(sale, customerToSave);
@@ -213,18 +225,34 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                     key={p.id} 
                                     disabled={noStock}
                                     onClick={() => addToCart(p)}
-                                    className={`relative flex flex-col items-center p-4 bg-white rounded-xl border transition-all duration-200
+                                    className={`relative flex flex-col items-center p-3 bg-white rounded-xl border transition-all duration-200 text-left
                                         ${noStock ? 'opacity-60 grayscale border-gray-100' : 'hover:border-blue-400 hover:shadow-lg hover:-translate-y-1 border-gray-200'}
                                     `}
                                 >
+                                    {/* Stock Badge */}
                                     <span className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${noStock ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}`}>
                                         {p.stock} un.
                                     </span>
-                                    <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3 text-slate-400">
-                                        <Smartphone size={24}/>
+                                    
+                                    {/* Icon */}
+                                    <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center mb-2 text-slate-400">
+                                        <Smartphone size={20}/>
                                     </div>
-                                    <p className="text-sm font-bold text-slate-700 text-center line-clamp-2 leading-tight min-h-[2.5rem]">{p.name}</p>
-                                    <p className="mt-2 text-lg font-black text-blue-600">${p.price}</p>
+                                    
+                                    {/* Info */}
+                                    <div className="w-full">
+                                        <p className="text-xs font-bold text-slate-700 line-clamp-2 min-h-[2rem] leading-tight">{p.name}</p>
+                                        
+                                        {/* IMEI/SKU Display */}
+                                        <div className="flex items-center gap-1 mt-1 mb-1">
+                                            <Barcode size={10} className="text-gray-400" />
+                                            <p className="text-[10px] text-gray-500 font-mono truncate bg-gray-50 px-1 rounded w-full">
+                                                {p.sku || 'N/A'}
+                                            </p>
+                                        </div>
+
+                                        <p className="text-lg font-black text-blue-600">${p.price}</p>
+                                    </div>
                                 </button>
                             );
                         })}
@@ -236,7 +264,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             <div className="flex-1 max-w-md bg-white rounded-2xl border border-slate-200 shadow-xl flex flex-col overflow-hidden h-full">
                 
                 {/* Total Header */}
-                <div className="bg-slate-900 text-white p-6 relative overflow-hidden">
+                <div className="bg-slate-900 text-white p-6 relative overflow-hidden shrink-0">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full blur-3xl opacity-20 -mr-10 -mt-10"></div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Total a Pagar</p>
                     <div className="flex items-baseline gap-2 mt-1">
@@ -259,13 +287,14 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                             cart.map((item, idx) => (
                                 <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100 group">
                                     <div className="flex items-center gap-3 overflow-hidden">
-                                        <span className="w-8 h-8 bg-white border border-gray-200 flex items-center justify-center text-sm font-bold rounded-lg text-slate-700 shadow-sm">{item.qty}</span>
-                                        <div className="truncate">
+                                        <span className="w-8 h-8 bg-white border border-gray-200 flex items-center justify-center text-sm font-bold rounded-lg text-slate-700 shadow-sm shrink-0">{item.qty}</span>
+                                        <div className="overflow-hidden">
                                             <p className="text-sm font-bold text-slate-700 truncate">{item.product.name}</p>
-                                            <p className="text-xs text-gray-500 font-medium">${item.product.price} c/u</p>
+                                            <p className="text-[10px] text-gray-500 font-mono">IMEI: {item.product.sku}</p>
+                                            <p className="text-xs text-blue-600 font-medium">${item.product.price} c/u</p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 pl-2">
                                         <span className="font-bold text-slate-800">${item.product.price * item.qty}</span>
                                         <button onClick={() => removeFromCart(idx)} className="text-gray-300 hover:text-red-500 transition-colors"><X size={18}/></button>
                                     </div>
@@ -274,7 +303,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                         )}
                     </div>
 
-                    <div className="h-2 bg-gray-50 border-t border-b border-gray-100"></div>
+                    <div className="h-2 bg-gray-50 border-t border-b border-gray-100 shrink-0"></div>
 
                     {/* Datos del Cliente Completo */}
                     <div className="p-4 space-y-3">
@@ -314,7 +343,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                 <Mail className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
                                 <input 
                                     className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500 transition-colors"
-                                    placeholder="Email (Opcional)"
+                                    placeholder="Email"
                                     value={customerData.email}
                                     onChange={e => setCustomerData({...customerData, email: e.target.value})}
                                 />
@@ -325,7 +354,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                             <MapPin className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
                             <input 
                                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500 transition-colors"
-                                placeholder="Dirección Fiscal (Opcional)"
+                                placeholder="Dirección Fiscal"
                                 value={customerData.address}
                                 onChange={e => setCustomerData({...customerData, address: e.target.value})}
                             />
@@ -334,7 +363,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                 </div>
 
                 {/* Footer Payment & Action */}
-                <div className="p-4 bg-white border-t border-gray-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
+                <div className="p-4 bg-white border-t border-gray-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10 shrink-0">
                     <div className="mb-3">
                          <div className="grid grid-cols-3 gap-2">
                             {['Efectivo $', 'Pago Movil', 'Zelle', 'Punto', 'Binance', 'Otro'].map(m => (
