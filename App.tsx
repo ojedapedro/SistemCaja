@@ -8,14 +8,13 @@ import {
   Menu, 
   X, 
   LogOut, 
-  CreditCard,
   Users,
   UserCircle,
   Loader2,
   RefreshCw,
   WifiOff
 } from 'lucide-react';
-import { Product, Sale, Purchase, ViewState, ExternalApp, Customer, User, Role } from './types';
+import { Product, Sale, Purchase, ViewState, ExternalApp, Customer, User } from './types';
 import Dashboard from './components/Dashboard';
 import AppLauncher from './components/AppLauncher';
 import ChatBot from './components/ChatBot';
@@ -59,14 +58,16 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
         const data = await fetchAllData();
-        // Solo actualizamos si hay datos válidos
-        if (data.products.length > 0) setProducts(data.products);
-        if (data.sales.length > 0) setSales(data.sales);
-        if (data.customers.length > 0) setCustomers(data.customers);
-        if (data.users.length > 0) setUsers(data.users);
-        if (data.apps.length > 0) setApps(data.apps);
+        
+        if (data) {
+             setProducts(data.products || []);
+             setSales(data.sales || []);
+             setCustomers(data.customers || []);
+             setUsers(data.users || []);
+             setApps(data.apps || []);
+        }
     } catch (e) {
-        console.error("Error cargando datos", e);
+        console.error("Error crítico cargando datos", e);
     } finally {
         setIsLoading(false);
         setIsSyncing(false);
@@ -89,7 +90,6 @@ const App: React.FC = () => {
     console.log("🚀 Procesando Venta:", sale.id);
 
     // 1. ACTUALIZACIÓN OPTIMISTA (UI INSTANTÁNEA)
-    // Calculamos el nuevo stock inmediatamente para que el usuario lo vea
     const updatedProducts = products.map(p => {
         const itemSold = sale.items.find(i => i.productId === p.id);
         if (itemSold) {
@@ -110,7 +110,6 @@ const App: React.FC = () => {
     }
 
     // 2. SINCRONIZACIÓN BACKGROUND (NO BLOQUEANTE)
-    // No usamos 'await' bloqueante para la UI, dejamos que corra en background.
     
     // a. Registrar Venta
     api.createSale(sale).catch(e => console.error("Error sync venta", e));
@@ -120,147 +119,200 @@ const App: React.FC = () => {
         api.createCustomer(customer).catch(e => console.error("Error sync cliente", e));
     }
 
-    // c. Actualizar Stock en Nube (Uno por uno)
+    // c. Actualizar Stock en Nube
     sale.items.forEach(item => {
         const p = updatedProducts.find(prod => prod.id === item.productId);
         if (p) {
-             api.updateStock(p.id, p.stock).catch(console.error);
+             api.updateStock(p.id, p.stock).catch(e => console.error("Error stock sync", e));
         }
     });
   };
-  
-  const handleNewPurchase = async (purchase: Purchase) => {
-      await api.createPurchase(purchase);
-      alert("Compra registrada. Sincronizando en segundo plano.");
+
+  const handlePurchase = async (purchase: Purchase) => {
+      // 1. Optimistic Stock Update
+      const updatedProducts = [...products];
+      purchase.items.forEach(item => {
+          const idx = updatedProducts.findIndex(p => p.id === item.productId);
+          if (idx >= 0) {
+              const currentStock = updatedProducts[idx].stock || 0;
+              const newStock = currentStock + item.quantity;
+              updatedProducts[idx] = { ...updatedProducts[idx], stock: newStock };
+              
+              // Sync Stock
+              api.updateStock(updatedProducts[idx].id, newStock).catch(console.error);
+          } else {
+              // Create temp product if not exists
+              const newProduct: Product = {
+                  id: item.productId,
+                  name: item.name,
+                  price: item.cost * 1.3, // Dummy markup
+                  stock: item.quantity,
+                  sku: 'N/A', 
+                  category: 'General'
+              };
+              updatedProducts.push(newProduct);
+          }
+      });
+      setProducts(updatedProducts);
+
+      // 2. Sync Purchase
+      api.createPurchase(purchase).catch(console.error);
   };
 
   const handleUpdateStock = async (id: string, newStock: number) => {
-      setProducts(products.map(p => p.id === id ? {...p, stock: newStock} : p));
-      api.updateStock(id, newStock);
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, stock: newStock } : p));
+      api.updateStock(id, newStock).catch(console.error);
   };
 
-  const handleAddCustomer = async (customer: Customer) => {
+  const handleAddCustomer = (customer: Customer) => {
       setCustomers(prev => [...prev, customer]);
-      api.createCustomer(customer);
+      api.createCustomer(customer).catch(console.error);
   };
 
-  const handleAddUser = async (user: User) => {
+  const handleAddUser = (user: User) => {
       setUsers(prev => [...prev, user]);
-      api.createUser(user);
+      api.createUser(user).catch(console.error);
   };
 
-  const handleAddApp = async (app: ExternalApp) => {
+  const handleAddApp = (app: ExternalApp) => {
       setApps(prev => [...prev, app]);
-      api.createApp(app);
-  };
-  
-  const handleRemoveApp = async (id: string) => {
-      setApps(prev => prev.filter(a => a.id !== id));
-      api.deleteApp(id);
+      api.createApp(app).catch(console.error);
   };
 
-  // --- RENDER ---
+  const handleRemoveApp = (id: string) => {
+      setApps(prev => prev.filter(a => a.id !== id));
+      api.deleteApp(id).catch(console.error);
+  };
+
+  // --- RENDERING ---
+
   if (isLoading) {
       return (
-          <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
-              <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-              <h2 className="text-xl font-bold text-gray-700">Iniciando SistemCaja</h2>
-              <p className="text-gray-400 mt-2">Cargando módulos...</p>
+          <div className="h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
+              <Loader2 className="animate-spin text-blue-600 w-10 h-10" />
+              <p className="text-gray-500 font-medium">Cargando Sistema...</p>
           </div>
       );
   }
 
   if (!currentUser) {
-    const authUsers = users.length > 0 ? users : [{id:'admin', name:'Admin Local', username:'admin', role:'admin' as Role, password:'123'}];
-    return <Login onLogin={handleLogin} users={authUsers} />;
+      return <Login onLogin={handleLogin} users={users} />;
   }
 
-  const NavItem = ({ view, icon: Icon, label, allowedRoles }: { view: ViewState, icon: any, label: string, allowedRoles: Role[] }) => {
-    if (!allowedRoles.includes(currentUser.role)) return null;
-    return (
-        <button 
-            onClick={() => setCurrentView(view)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group
-            ${currentView === view ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-        >
-            <Icon size={20} className={`${currentView === view ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
-            {sidebarOpen && <span className="font-medium">{label}</span>}
-        </button>
-    );
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin'] },
+    { id: 'sales', label: 'Ventas', icon: ShoppingCart, roles: ['admin', 'seller'] },
+    { id: 'purchases', label: 'Compras', icon: Package, roles: ['admin', 'warehouse'] },
+    { id: 'inventory', label: 'Inventario', icon: Grid, roles: ['admin', 'warehouse'] },
+    { id: 'returns', label: 'Devoluciones', icon: RotateCcw, roles: ['admin', 'seller'] },
+    { id: 'customers', label: 'Clientes', icon: Users, roles: ['admin', 'seller'] },
+    { id: 'users', label: 'Usuarios', icon: UserCircle, roles: ['admin'] },
+    { id: 'apps', label: 'Aplicaciones', icon: Grid, roles: ['admin', 'seller', 'warehouse'] },
+  ];
+
+  const filteredMenu = menuItems.filter(item => item.roles.includes(currentUser.role));
+
+  const renderContent = () => {
+      switch (currentView) {
+          case 'dashboard': return <Dashboard sales={sales} />;
+          case 'sales': return <SalesView products={products} customers={customers} onSale={handleNewSale} />;
+          case 'purchases': return <PurchasesView onPurchase={handlePurchase} />;
+          case 'inventory': return <InventoryView products={products} onUpdateStock={handleUpdateStock} />;
+          case 'customers': return <CustomersView customers={customers} onAddCustomer={handleAddCustomer} />;
+          case 'users': return <UsersView users={users} onAddUser={handleAddUser} />;
+          case 'apps': return <AppLauncher apps={apps} onAddApp={handleAddApp} onRemoveApp={handleRemoveApp} />;
+          case 'returns': return <ReturnsView />;
+          default: return <Dashboard sales={sales} />;
+      }
   };
 
-  if (currentView === 'sales') {
-    return (
-        <div className="h-screen bg-gray-50 flex font-sans overflow-hidden">
-             <div className="w-16 bg-slate-900 text-white flex flex-col items-center py-4 z-50">
-                <div className="mb-6 font-bold text-blue-400">SC</div>
-                <div className="space-y-4 flex-1">
-                    <button onClick={() => setCurrentView('dashboard')} className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Volver"><LayoutDashboard size={20}/></button>
-                    <button onClick={() => setCurrentView('sales')} className="p-2 bg-blue-600 text-white rounded shadow-lg" title="Ventas"><ShoppingCart size={20}/></button>
-                    <button onClick={() => setCurrentView('inventory')} className="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Inventario"><Package size={20}/></button>
-                </div>
-                <button onClick={handleLogout} className="p-2 text-red-400 hover:bg-slate-800 rounded"><LogOut size={20}/></button>
-             </div>
-             <div className="flex-1 overflow-hidden relative">
-                <SalesView products={products} customers={customers} onSale={handleNewSale} />
-             </div>
-        </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 flex font-sans">
-        {/* Sidebar */}
-        <div className={`bg-slate-900 text-white transition-all duration-300 flex flex-col ${sidebarOpen ? 'w-64' : 'w-20'}`}>
-            <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800">
-                {sidebarOpen ? <h1 className="text-xl font-bold text-white">SistemCaja</h1> : <div className="font-bold">SC</div>}
-                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1 text-slate-400"><Menu size={18} /></button>
+    <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
+        {/* SIDEBAR */}
+        <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white transition-all duration-300 flex flex-col shadow-xl z-20`}>
+            <div className="p-4 flex items-center justify-between border-b border-slate-800">
+                {sidebarOpen && <h1 className="font-bold text-xl tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">SistemCaja</h1>}
+                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
+                    {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                </button>
             </div>
             
-            <div className="p-4 border-b border-slate-800">
-                 <div className="flex items-center gap-3">
-                     <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold">
-                         {currentUser.name.charAt(0)}
-                     </div>
-                     {sidebarOpen && <div className="text-sm font-medium truncate">{currentUser.name}</div>}
-                 </div>
-            </div>
-
-            <nav className="flex-1 p-4 space-y-2 overflow-y-auto custom-scrollbar">
-                <NavItem view="dashboard" icon={LayoutDashboard} label="Panel Principal" allowedRoles={['admin']} />
-                <NavItem view="sales" icon={ShoppingCart} label="Caja / Ventas" allowedRoles={['admin', 'seller']} />
-                <NavItem view="purchases" icon={CreditCard} label="Compras" allowedRoles={['admin']} />
-                <NavItem view="inventory" icon={Package} label="Inventario" allowedRoles={['admin', 'warehouse']} />
-                <NavItem view="returns" icon={RotateCcw} label="Devoluciones" allowedRoles={['admin', 'seller']} />
-                <NavItem view="customers" icon={Users} label="Clientes" allowedRoles={['admin', 'seller']} />
-                <NavItem view="apps" icon={Grid} label="Aplicaciones" allowedRoles={['admin', 'seller', 'warehouse']} />
-                <NavItem view="users" icon={UserCircle} label="Usuarios" allowedRoles={['admin']} />
+            <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto custom-scrollbar">
+                {filteredMenu.map(item => (
+                    <button
+                        key={item.id}
+                        onClick={() => setCurrentView(item.id as ViewState)}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${
+                            currentView === item.id 
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' 
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                        }`}
+                    >
+                        <item.icon size={22} className={`${currentView === item.id ? 'animate-pulse' : ''}`} />
+                        {sidebarOpen && <span className="font-medium">{item.label}</span>}
+                        
+                        {!sidebarOpen && (
+                            <div className="absolute left-16 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                                {item.label}
+                            </div>
+                        )}
+                    </button>
+                ))}
             </nav>
 
-            <div className="p-4">
-                <button onClick={loadData} className="flex items-center gap-2 text-slate-400 hover:text-white w-full p-2 mb-2">
-                    <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''}/>
-                    {sidebarOpen && (isSyncing ? 'Sincronizando...' : 'Recargar')}
-                </button>
-                <button onClick={handleLogout} className="flex items-center gap-2 text-red-400 hover:text-red-300 w-full p-2">
+            <div className="p-4 border-t border-slate-800">
+                <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center'}`}>
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                        {currentUser ? currentUser.username.substring(0,2).toUpperCase() : 'US'}
+                    </div>
+                    {sidebarOpen && currentUser && (
+                        <div className="overflow-hidden">
+                            <p className="text-sm font-bold truncate">{currentUser.name}</p>
+                            <p className="text-xs text-slate-500 capitalize">{currentUser.role}</p>
+                        </div>
+                    )}
+                </div>
+                <button 
+                    onClick={handleLogout}
+                    className={`mt-4 w-full flex items-center justify-center gap-2 p-2 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors ${!sidebarOpen && 'mt-6'}`}
+                >
                     <LogOut size={18} />
-                    {sidebarOpen && 'Salir'}
+                    {sidebarOpen && <span className="text-sm font-medium">Cerrar Sesión</span>}
                 </button>
             </div>
-        </div>
+        </aside>
 
-        {/* Content */}
-        <main className="flex-1 overflow-y-auto h-screen p-4 bg-slate-100">
-            {currentView === 'dashboard' && <Dashboard sales={sales} />}
-            {currentView === 'inventory' && <InventoryView products={products} onUpdateStock={handleUpdateStock} />}
-            {currentView === 'apps' && <AppLauncher apps={apps} onAddApp={handleAddApp} onRemoveApp={handleRemoveApp} />}
-            {currentView === 'customers' && <CustomersView customers={customers} onAddCustomer={handleAddCustomer} />}
-            {currentView === 'users' && <UsersView users={users} onAddUser={handleAddUser} />}
-            {currentView === 'returns' && <ReturnsView />}
-            {currentView === 'purchases' && <PurchasesView onPurchase={handleNewPurchase} />}
+        {/* MAIN CONTENT */}
+        <main className="flex-1 flex flex-col relative overflow-hidden">
+            {/* Top Bar for Sync Status */}
+            <div className="bg-white border-b border-gray-200 px-6 py-2 flex justify-between items-center h-14 shrink-0">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                    {isSyncing ? (
+                        <>
+                            <Loader2 size={14} className="animate-spin text-blue-500" />
+                            <span>Sincronizando...</span>
+                        </>
+                    ) : (
+                        <>
+                            <RefreshCw size={14} className="text-green-500" />
+                            <span>Sistema Actualizado</span>
+                        </>
+                    )}
+                </div>
+                {!isSyncing && !isLoading && products.length === 0 && (
+                     <div className="flex items-center gap-2 text-xs text-red-500 bg-red-50 px-3 py-1 rounded-full">
+                        <WifiOff size={12} />
+                        Modo Offline / Sin Datos
+                     </div>
+                )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar relative">
+                {renderContent()}
+            </div>
+            
+            <ChatBot />
         </main>
-        
-        <ChatBot />
     </div>
   );
 };
