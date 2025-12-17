@@ -3,7 +3,7 @@ import { Product, Sale, Customer } from '../types';
 import { 
     Search, ShoppingCart, Smartphone, CheckCircle, CreditCard, 
     Smartphone as PhoneIcon, Printer, Share2, 
-    RefreshCw, Edit2, User, X, AlertCircle, MapPin, Mail, Barcode
+    RefreshCw, Edit2, User, X, AlertCircle, MapPin, Mail, Barcode, ScanBarcode
 } from 'lucide-react';
 
 interface SalesViewProps {
@@ -39,6 +39,23 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     const searchInputRef = useRef<HTMLInputElement>(null);
 
+    // --- EFECTOS DE FOCO ---
+    // Mantiene el foco en el buscador a menos que estemos editando datos de cliente
+    useEffect(() => {
+        if (!showReceipt && !isEditingRate) {
+            const timer = setTimeout(() => {
+                // Solo enfocar si el usuario no está escribiendo en campos de cliente
+                const activeEl = document.activeElement;
+                const isCustomerInput = activeEl?.tagName === 'INPUT' && activeEl.getAttribute('placeholder') !== 'Buscar producto o escanear IMEI...';
+                
+                if (!isCustomerInput && searchInputRef.current) {
+                    searchInputRef.current.focus();
+                }
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [cart, showReceipt]); // Re-enfocar cuando el carrito cambia
+
     // --- CÁLCULOS ---
     const totalUSD = cart.reduce((acc, item) => acc + (item.product.price * item.qty), 0);
     const totalBs = totalUSD * exchangeRate;
@@ -46,16 +63,14 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- ACCIONES ---
 
     const addToCart = (product: Product) => {
-        // Usamos la forma funcional (prev => ...) para asegurar que siempre trabajamos 
-        // con la versión más reciente del carrito, evitando que se sobrescriban items 
-        // si se escanea muy rápido.
         setCart(prev => {
             const existingItem = prev.find(i => i.product.id === product.id);
             const currentQtyInCart = existingItem ? existingItem.qty : 0;
+            const availableStock = Number(product.stock) || 0;
 
-            if (currentQtyInCart + 1 > product.stock) {
-                // Usamos un pequeño timeout para el alert para no bloquear el renderizado del estado
-                setTimeout(() => alert(`⚠️ Stock insuficiente para ${product.name}. Disponible: ${product.stock}`), 10);
+            if (currentQtyInCart + 1 > availableStock) {
+                // Usamos alert nativo para bloquear momentáneamente y avisar
+                alert(`⚠️ Stock insuficiente para ${product.name}. Disponible: ${availableStock}`);
                 return prev;
             }
 
@@ -65,6 +80,10 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                 return [...prev, {product, qty: 1}];
             }
         });
+
+        // Limpiar búsqueda y recuperar foco inmediatamente
+        setSearchTerm('');
+        if(searchInputRef.current) searchInputRef.current.focus();
     };
 
     const removeFromCart = (index: number) => {
@@ -73,24 +92,36 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             newCart.splice(index, 1);
             return newCart;
         });
+        if(searchInputRef.current) searchInputRef.current.focus();
     };
 
     const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
+            e.preventDefault(); // Evitar comportamientos extraños del navegador
             const term = searchTerm.trim().toLowerCase();
             if(!term) return;
 
-            // Búsqueda exacta (Barcode scan o IMEI)
-            const exact = products.find(p => p.sku.toLowerCase() === term || p.id === term);
+            // 1. Buscar coincidencia exacta (Escáner de Barras / IMEI)
+            const exact = products.find(p => 
+                String(p.sku).toLowerCase() === term || 
+                String(p.id) === term
+            );
             
             if (exact) {
                 addToCart(exact);
-                setSearchTerm(''); // Limpiar para el siguiente escaneo
-                // Mantener el foco
                 return;
             }
             
-            // Si no es exacto, no hacemos nada (el usuario filtra visualmente en el grid)
+            // Si no es exacto, el filtro visual ya hizo su trabajo.
+            // Si el usuario da Enter y solo hay 1 resultado visible, lo agregamos (comodidad)
+            const visible = products.filter(p => 
+                p.name.toLowerCase().includes(term) || 
+                p.sku.toLowerCase().includes(term)
+            );
+            
+            if (visible.length === 1) {
+                addToCart(visible[0]);
+            }
         }
     };
 
@@ -106,7 +137,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     const handleCheckout = () => {
         if (cart.length === 0) return;
         
-        // Validación básica de cliente si es crédito
         if (paymentTab === 'credito' && !customerData.name) {
             alert("Para ventas a crédito debe registrar el nombre del cliente.");
             return;
@@ -145,8 +175,15 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         setSearchTerm('');
         setCompletedSale(null);
         setShowReceipt(false);
-        if(searchInputRef.current) searchInputRef.current.focus();
+        // Forzar foco al reiniciar
+        setTimeout(() => searchInputRef.current?.focus(), 100);
     };
+
+    // Filter products visualmente
+    const filteredProducts = products.filter(p => 
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     // --- RENDERIZADO DEL MODAL RECIBO ---
     const renderReceiptModal = () => (
@@ -173,12 +210,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         </div>
     );
 
-    // Filter products
-    const filteredProducts = products.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
     return (
         <div className="h-full flex flex-col md:flex-row gap-4 p-4 bg-slate-100">
             {showReceipt && renderReceiptModal()}
@@ -186,31 +217,34 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             {/* IZQUIERDA: CATÁLOGO */}
             <div className="flex-[2] flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full">
                 {/* Header Search */}
-                <div className="p-4 border-b border-slate-100 flex gap-4 items-center">
+                <div className="p-4 border-b border-slate-100 flex gap-4 items-center bg-slate-50">
                     <div className="relative flex-1">
-                        <Search className="absolute left-3 top-3 text-gray-400" size={20}/>
+                        <ScanBarcode className="absolute left-3 top-3 text-blue-500" size={20}/>
                         <input 
                             ref={searchInputRef}
-                            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                            placeholder="Buscar producto o escanear IMEI..."
+                            className="w-full pl-10 pr-4 py-3 bg-white border-2 border-blue-100 rounded-xl focus:ring-4 focus:ring-blue-200 focus:border-blue-500 outline-none transition-all font-medium text-lg placeholder:text-slate-400"
+                            placeholder="ESCANEAR IMEI O CÓDIGO AQUÍ..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                             onKeyDown={handleSearch}
                             autoFocus
+                            autoComplete="off"
                         />
                     </div>
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
-                        <span className="text-xs font-bold text-gray-400">TASA BCV</span>
+                    <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+                        <span className="text-xs font-bold text-gray-500">TASA BCV</span>
                         {isEditingRate ? (
                             <input 
-                                className="w-16 bg-white border border-blue-300 rounded px-1 text-right font-bold"
+                                className="w-20 bg-gray-50 border border-blue-300 rounded px-2 py-1 text-right font-bold text-lg"
                                 autoFocus
                                 onBlur={() => setIsEditingRate(false)}
                                 value={exchangeRate}
                                 onChange={e => setExchangeRate(Number(e.target.value))}
                             />
                         ) : (
-                            <span onClick={() => setIsEditingRate(true)} className="font-bold text-lg cursor-pointer text-slate-700">Bs. {exchangeRate}</span>
+                            <button onClick={() => setIsEditingRate(true)} className="font-bold text-xl text-slate-800 hover:text-blue-600">
+                                Bs. {exchangeRate}
+                            </button>
                         )}
                     </div>
                 </div>
@@ -225,33 +259,38 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                     key={p.id} 
                                     disabled={noStock}
                                     onClick={() => addToCart(p)}
-                                    className={`relative flex flex-col items-center p-3 bg-white rounded-xl border transition-all duration-200 text-left
-                                        ${noStock ? 'opacity-60 grayscale border-gray-100' : 'hover:border-blue-400 hover:shadow-lg hover:-translate-y-1 border-gray-200'}
+                                    className={`relative flex flex-col p-0 bg-white rounded-xl border transition-all duration-200 text-left overflow-hidden group
+                                        ${noStock ? 'opacity-60 grayscale border-gray-100' : 'hover:border-blue-500 hover:shadow-xl hover:-translate-y-1 border-gray-200 shadow-sm'}
                                     `}
                                 >
-                                    {/* Stock Badge */}
-                                    <span className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${noStock ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}`}>
-                                        {p.stock} un.
-                                    </span>
-                                    
-                                    {/* Icon */}
-                                    <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center mb-2 text-slate-400">
-                                        <Smartphone size={20}/>
+                                    {/* IMEI / SKU STRIP - MUY VISIBLE */}
+                                    <div className="bg-yellow-100 w-full px-3 py-1 border-b border-yellow-200 flex items-center gap-2">
+                                        <Barcode size={14} className="text-yellow-700 opacity-70" />
+                                        <span className="font-mono font-bold text-xs text-yellow-900 truncate tracking-wide">
+                                            {p.sku || 'SIN IMEI'}
+                                        </span>
                                     </div>
-                                    
-                                    {/* Info */}
-                                    <div className="w-full">
-                                        <p className="text-xs font-bold text-slate-700 line-clamp-2 min-h-[2rem] leading-tight">{p.name}</p>
-                                        
-                                        {/* IMEI/SKU Display */}
-                                        <div className="flex items-center gap-1 mt-1 mb-1">
-                                            <Barcode size={10} className="text-gray-400" />
-                                            <p className="text-[10px] text-gray-500 font-mono truncate bg-gray-50 px-1 rounded w-full">
-                                                {p.sku || 'N/A'}
-                                            </p>
-                                        </div>
 
-                                        <p className="text-lg font-black text-blue-600">${p.price}</p>
+                                    <div className="p-4 flex flex-col gap-2 flex-1">
+                                        <div className="flex justify-between items-start">
+                                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
+                                                <Smartphone size={20}/>
+                                            </div>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${noStock ? 'bg-gray-100 text-gray-500' : 'bg-green-100 text-green-700'}`}>
+                                                {p.stock} disp.
+                                            </span>
+                                        </div>
+                                        
+                                        <p className="text-sm font-bold text-slate-700 line-clamp-2 leading-tight min-h-[2.5rem] mt-1">
+                                            {p.name}
+                                        </p>
+                                        
+                                        <div className="mt-auto pt-2 flex justify-between items-end border-t border-gray-50">
+                                             <p className="text-xl font-black text-blue-600">${p.price}</p>
+                                             <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                 <CheckCircle size={14} />
+                                             </div>
+                                        </div>
                                     </div>
                                 </button>
                             );
@@ -282,21 +321,28 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                             <div className="h-full flex flex-col items-center justify-center text-gray-300 border-2 border-dashed border-gray-100 rounded-xl py-8">
                                 <ShoppingCart size={40} className="mb-2 opacity-50"/>
                                 <p className="text-sm font-medium">Carrito Vacío</p>
+                                <p className="text-xs mt-1">Escanee un producto para comenzar</p>
                             </div>
                         ) : (
                             cart.map((item, idx) => (
-                                <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100 group">
+                                <div key={idx} className="flex justify-between items-center p-3 bg-white rounded-xl border border-slate-200 shadow-sm group hover:border-blue-300 transition-colors">
                                     <div className="flex items-center gap-3 overflow-hidden">
-                                        <span className="w-8 h-8 bg-white border border-gray-200 flex items-center justify-center text-sm font-bold rounded-lg text-slate-700 shadow-sm shrink-0">{item.qty}</span>
+                                        <span className="w-8 h-8 bg-slate-100 border border-slate-200 flex items-center justify-center text-sm font-bold rounded-lg text-slate-700 shrink-0">
+                                            {item.qty}
+                                        </span>
                                         <div className="overflow-hidden">
-                                            <p className="text-sm font-bold text-slate-700 truncate">{item.product.name}</p>
-                                            <p className="text-[10px] text-gray-500 font-mono">IMEI: {item.product.sku}</p>
+                                            <p className="text-sm font-bold text-slate-800 truncate">{item.product.name}</p>
+                                            <p className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
+                                                <Barcode size={10} /> {item.product.sku}
+                                            </p>
                                             <p className="text-xs text-blue-600 font-medium">${item.product.price} c/u</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3 pl-2">
                                         <span className="font-bold text-slate-800">${item.product.price * item.qty}</span>
-                                        <button onClick={() => removeFromCart(idx)} className="text-gray-300 hover:text-red-500 transition-colors"><X size={18}/></button>
+                                        <button onClick={() => removeFromCart(idx)} className="text-gray-300 hover:text-red-500 transition-colors p-1.5 hover:bg-red-50 rounded-full">
+                                            <X size={18}/>
+                                        </button>
                                     </div>
                                 </div>
                             ))
