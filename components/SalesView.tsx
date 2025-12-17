@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, Sale, Customer } from '../types';
 import { 
-    Search, ShoppingCart, Smartphone, CheckCircle, CreditCard, 
+    ShoppingCart, Smartphone, CheckCircle, CreditCard, 
     Smartphone as PhoneIcon, Printer, Share2, 
-    RefreshCw, Edit2, User, X, AlertCircle, MapPin, Mail, Barcode, ScanBarcode
+    User, X, MapPin, Mail, Barcode, ScanBarcode, Package
 } from 'lucide-react';
 
 interface SalesViewProps {
@@ -112,8 +112,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                 return;
             }
             
-            // Si no es exacto, el filtro visual ya hizo su trabajo.
-            // Si el usuario da Enter y solo hay 1 resultado visible, lo agregamos (comodidad)
+            // 2. Buscar por coincidencia de nombre si no es exacto
             const visible = products.filter(p => 
                 p.name.toLowerCase().includes(term) || 
                 p.sku.toLowerCase().includes(term)
@@ -121,6 +120,10 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             
             if (visible.length === 1) {
                 addToCart(visible[0]);
+            } else if (visible.length > 1) {
+                alert(`Se encontraron ${visible.length} productos. Por favor escanee el código específico.`);
+            } else {
+                alert("Producto no encontrado.");
             }
         }
     };
@@ -179,12 +182,6 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         setTimeout(() => searchInputRef.current?.focus(), 100);
     };
 
-    // Filter products visualmente
-    const filteredProducts = products.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
     // --- RENDERIZADO DEL MODAL RECIBO ---
     const renderReceiptModal = () => (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
@@ -214,7 +211,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         <div className="h-full flex flex-col md:flex-row gap-4 p-4 bg-slate-100">
             {showReceipt && renderReceiptModal()}
 
-            {/* IZQUIERDA: CATÁLOGO */}
+            {/* IZQUIERDA: ESCANER (SIN CATALOGO) */}
             <div className="flex-[2] flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full">
                 {/* Header Search */}
                 <div className="p-4 border-b border-slate-100 flex gap-4 items-center bg-slate-50">
@@ -249,52 +246,25 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                     </div>
                 </div>
 
-                {/* Grid */}
-                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50">
-                    <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {filteredProducts.map(p => {
-                            const noStock = p.stock <= 0;
-                            return (
-                                <button 
-                                    key={p.id} 
-                                    disabled={noStock}
-                                    onClick={() => addToCart(p)}
-                                    className={`relative flex flex-col p-0 bg-white rounded-xl border transition-all duration-200 text-left overflow-hidden group
-                                        ${noStock ? 'opacity-60 grayscale border-gray-100' : 'hover:border-blue-500 hover:shadow-xl hover:-translate-y-1 border-gray-200 shadow-sm'}
-                                    `}
-                                >
-                                    {/* IMEI / SKU STRIP - MUY VISIBLE */}
-                                    <div className="bg-yellow-100 w-full px-3 py-1 border-b border-yellow-200 flex items-center gap-2">
-                                        <Barcode size={14} className="text-yellow-700 opacity-70" />
-                                        <span className="font-mono font-bold text-xs text-yellow-900 truncate tracking-wide">
-                                            {p.sku || 'SIN IMEI'}
-                                        </span>
-                                    </div>
-
-                                    <div className="p-4 flex flex-col gap-2 flex-1">
-                                        <div className="flex justify-between items-start">
-                                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
-                                                <Smartphone size={20}/>
-                                            </div>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${noStock ? 'bg-gray-100 text-gray-500' : 'bg-green-100 text-green-700'}`}>
-                                                {p.stock} disp.
-                                            </span>
-                                        </div>
-                                        
-                                        <p className="text-sm font-bold text-slate-700 line-clamp-2 leading-tight min-h-[2.5rem] mt-1">
-                                            {p.name}
-                                        </p>
-                                        
-                                        <div className="mt-auto pt-2 flex justify-between items-end border-t border-gray-50">
-                                             <p className="text-xl font-black text-blue-600">${p.price}</p>
-                                             <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                 <CheckCircle size={14} />
-                                             </div>
-                                        </div>
-                                    </div>
-                                </button>
-                            );
-                        })}
+                {/* AREA DE ESPERA / PLACEHOLDER (SIN GRID) */}
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-300 bg-slate-50/50">
+                    <div className="w-32 h-32 bg-slate-100 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                        <Barcode size={64} className="opacity-50" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-400 mb-2">Listo para Vender</h2>
+                    <p className="max-w-md text-slate-400">
+                        Use el escáner de código de barras o ingrese el IMEI del producto para agregarlo al carrito.
+                    </p>
+                    <div className="mt-8 flex gap-4 opacity-50">
+                        <div className="flex flex-col items-center">
+                            <div className="p-2 bg-white rounded border border-slate-200 mb-1"><Smartphone size={20} /></div>
+                            <span className="text-xs font-bold">Escanear</span>
+                        </div>
+                        <div className="h-px w-10 bg-slate-300 self-center"></div>
+                        <div className="flex flex-col items-center">
+                            <div className="p-2 bg-white rounded border border-slate-200 mb-1"><ShoppingCart size={20} /></div>
+                            <span className="text-xs font-bold">Vender</span>
+                        </div>
                     </div>
                 </div>
             </div>
