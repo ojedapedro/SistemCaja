@@ -1,6 +1,7 @@
 import { Product, Sale, Customer, User, ExternalApp, Purchase } from '../types';
 
 const SHEETS_API_URL = 'https://script.google.com/macros/s/AKfycbzBpTxHOEPqvul1rdyGUESuG8WRcsHhmmDqphIVKRlwTefkeBSYyssPE7javZgLGmA_/exec'; 
+const CACHE_KEY = 'sistemcaja_local_db';
 
 export interface AppData {
   products: Product[];
@@ -10,7 +11,7 @@ export interface AppData {
   apps: ExternalApp[];
 }
 
-// --- LOCAL DATA (Respaldo) ---
+// --- LOCAL DATA ---
 let localData: AppData = {
     products: [],
     sales: [],
@@ -28,14 +29,20 @@ const parseNumber = (value: any): number => {
     return isNaN(num) ? 0 : num;
 };
 
-const mapProductFromSheet = (raw: any): Product => ({
-    id: String(raw.ID || raw.id || Date.now()),
-    name: String(raw['NOMBRE DEL PRODUCTO'] || raw.NOMBRE || raw.Nombre || raw.name || 'Producto Sin Nombre'),
-    price: parseNumber(raw.Precio || raw.PRECIO || raw.price),
-    stock: parseNumber(raw.Stock || raw.STOCK || raw.stock),
-    sku: String(raw.Imei || raw.IMEI || raw.sku || raw.Codigo || ''),
-    category: String(raw.CATEGORIA || raw.Categoria || raw.category || 'General')
-});
+const mapProductFromSheet = (raw: any): Product => {
+    // EL IMEI ES EL IDENTIFICADOR PRIMARIO
+    const imei = String(raw.Imei || raw.IMEI || raw.sku || raw.Codigo || '');
+    const fallbackId = String(raw.ID || raw.id || '');
+    
+    return {
+        id: imei || fallbackId || `TEMP-${Date.now()}`, // Prioridad total al IMEI como ID
+        name: String(raw['NOMBRE DEL PRODUCTO'] || raw.NOMBRE || raw.Nombre || raw.name || 'Producto Sin Nombre'),
+        price: parseNumber(raw.Precio || raw.PRECIO || raw.price),
+        stock: parseNumber(raw.Stock || raw.STOCK || raw.stock),
+        sku: imei, // Mantenemos sku para compatibilidad visual
+        category: String(raw.CATEGORIA || raw.Categoria || raw.category || 'General')
+    };
+};
 
 const formatSaleForSheet = (sale: Sale) => ({
     id: sale.id,
@@ -49,22 +56,48 @@ const formatSaleForSheet = (sale: Sale) => ({
     items: JSON.stringify(sale.items)
 });
 
+// --- CACHE MANAGEMENT ---
+const saveToCache = (data: AppData) => {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    } catch (e) {
+        console.error("Error guardando en caché", e);
+    }
+};
+
+const loadFromCache = (): AppData | null => {
+    try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        return cached ? JSON.parse(cached) : null;
+    } catch (e) {
+        return null;
+    }
+};
+
 // --- API IMPLEMENTATION ---
 
 export const fetchAllData = async (): Promise<AppData> => {
-  console.log("📥 Obteniendo datos de Google Sheets...");
+  const cachedData = loadFromCache();
+  if (cachedData) {
+      localData = cachedData;
+  }
+
   try {
     const response = await fetch(SHEETS_API_URL, { 
         method: 'GET', 
-        redirect: 'follow' 
+        redirect: 'follow'
     });
     
-    if (!response.ok) throw new Error("Error conectando con la base de datos");
+    if (!response.ok) throw new Error("Error HTTP " + response.status);
     
-    const data = await response.json();
+    const text = await response.text();
+    if (text.startsWith('<') || text.includes('DOCTYPE')) {
+        throw new Error("Respuesta inválida de Google (HTML)");
+    }
+
+    const data = JSON.parse(text);
     
-    // Actualizar cache local
-    localData = {
+    const freshData: AppData = {
         products: Array.isArray(data.products) ? data.products.map(mapProductFromSheet) : [],
         sales: data.sales || [],
         customers: data.customers || [],
@@ -72,29 +105,29 @@ export const fetchAllData = async (): Promise<AppData> => {
         apps: data.apps || []
     };
 
+    if (freshData.products.length > 0) {
+        saveToCache(freshData);
+        localData = freshData;
+    }
+
     return localData;
+
   } catch (error) {
-    console.warn("⚠️ Error de red o API Offline. Usando datos locales.", error);
     return localData;
   }
 };
 
-// Función para enviar datos "a ciegas" (Fire and Forget) para evitar el error de canal cerrado
 const sendToSheet = async (action: string, sheet: string, data: any) => {
     try {
-        // Usamos no-cors. Esto evita que el navegador espere una respuesta JSON estricta,
-        // eliminando el error "message channel closed" si el script tarda mucho.
         await fetch(SHEETS_API_URL, {
             method: 'POST',
             mode: 'no-cors', 
             headers: { "Content-Type": "text/plain" },
             body: JSON.stringify({ action, sheet, data }),
-            keepalive: true // Mantiene la petición viva aunque se cierre la pestaña
+            keepalive: true 
         });
-        console.log(`✅ Enviado: ${action} ${sheet}`);
         return true;
     } catch (e) {
-        console.error(`❌ Error enviando ${action}:`, e);
         return false;
     }
 };
@@ -105,6 +138,7 @@ export const api = {
   },
   
   updateStock: async (id: string, newStock: number) => {
+    // Al pasar el id (que ahora es el IMEI), el backend puede actualizar la fila correcta
     return sendToSheet('updateStock', 'Products', { id, stock: newStock });
   },
 
