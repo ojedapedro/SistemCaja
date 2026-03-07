@@ -16,6 +16,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     // --- ESTADO ---
     const [cart, setCart] = useState<{product: Product, qty: number}[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState<Product[]>([]);
     
     // Datos Completos del Cliente
     const [customerData, setCustomerData] = useState<Customer>({
@@ -114,9 +115,12 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
 
     const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
-            e.preventDefault(); // Evitar comportamientos extraños del navegador
+            e.preventDefault();
             const term = searchTerm.trim().toLowerCase();
-            if(!term) return;
+            if(!term) {
+                setSearchResults([]);
+                return;
+            }
 
             // 1. Buscar coincidencia exacta (Escáner de Barras / IMEI)
             const exact = products.find(p => 
@@ -126,6 +130,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
             
             if (exact) {
                 addToCart(exact);
+                setSearchResults([]);
                 return;
             }
             
@@ -135,11 +140,9 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                 p.sku.toLowerCase().includes(term)
             );
             
-            if (visible.length === 1) {
-                addToCart(visible[0]);
-            } else if (visible.length > 1) {
-                alert(`Se encontraron ${visible.length} productos. Por favor escanee el código específico.`);
-            } else {
+            setSearchResults(visible);
+            
+            if (visible.length === 0) {
                 alert("Producto no encontrado.");
             }
         }
@@ -193,6 +196,7 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         setCart([]);
         setCustomerData({ id: '', name: '', phone: '', email: '', address: '' });
         setSearchTerm('');
+        setSearchResults([]);
         setCompletedSale(null);
         setShowReceipt(false);
         // Forzar foco al reiniciar
@@ -263,26 +267,68 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                     </div>
                 </div>
 
-                {/* AREA DE ESPERA / PLACEHOLDER (SIN GRID) */}
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-300 dark:text-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
-                    <div className="w-32 h-32 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-6 animate-pulse transition-colors">
-                        <Barcode size={64} className="opacity-50" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-slate-400 dark:text-slate-500 mb-2">Listo para Vender</h2>
-                    <p className="max-w-md text-slate-400 dark:text-slate-500">
-                        Use el escáner de código de barras o ingrese el IMEI del producto para agregarlo al carrito.
-                    </p>
-                    <div className="mt-8 flex gap-4 opacity-50">
-                        <div className="flex flex-col items-center">
-                            <div className="p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 mb-1 transition-colors"><Smartphone size={20} /></div>
-                            <span className="text-xs font-bold">Escanear</span>
+                {/* AREA DE RESULTADOS O ESPERA */}
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50/50 dark:bg-slate-900/30">
+                    {searchResults.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {searchResults.map(product => (
+                                <button 
+                                    key={product.id}
+                                    onClick={() => addToCart(product)}
+                                    className="flex flex-col text-left bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 transition-all group relative overflow-hidden"
+                                >
+                                    <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="bg-blue-500 text-white p-1.5 rounded-full shadow-lg">
+                                            <ShoppingCart size={14} />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="mb-3">
+                                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 leading-tight mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                            {product.name}
+                                        </h3>
+                                        <div className="flex items-center gap-1.5 text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900/50 px-2 py-1 rounded-md w-fit">
+                                            <Barcode size={12} className="text-slate-400" />
+                                            {product.sku}
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-auto flex items-end justify-between">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Precio</span>
+                                            <span className="text-2xl font-black text-blue-600 dark:text-blue-400 tracking-tight">
+                                                ${product.price}
+                                            </span>
+                                        </div>
+                                        <div className={`text-[10px] font-bold px-2 py-1 rounded-full ${Number(product.stock) > 5 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400'}`}>
+                                            Stock: {product.stock}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
                         </div>
-                        <div className="h-px w-10 bg-slate-300 dark:bg-slate-700 self-center"></div>
-                        <div className="flex flex-col items-center">
-                            <div className="p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 mb-1 transition-colors"><ShoppingCart size={20} /></div>
-                            <span className="text-xs font-bold">Vender</span>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center text-slate-300 dark:text-slate-700">
+                            <div className="w-32 h-32 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-6 animate-pulse transition-colors">
+                                <Barcode size={64} className="opacity-50" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-slate-400 dark:text-slate-500 mb-2">Listo para Vender</h2>
+                            <p className="max-w-md text-slate-400 dark:text-slate-500">
+                                Use el escáner de código de barras o ingrese el IMEI del producto para buscarlo.
+                            </p>
+                            <div className="mt-8 flex gap-4 opacity-50">
+                                <div className="flex flex-col items-center">
+                                    <div className="p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 mb-1 transition-colors"><Smartphone size={20} /></div>
+                                    <span className="text-xs font-bold">Escanear</span>
+                                </div>
+                                <div className="h-px w-10 bg-slate-300 dark:bg-slate-700 self-center"></div>
+                                <div className="flex flex-col items-center">
+                                    <div className="p-2 bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 mb-1 transition-colors"><ShoppingCart size={20} /></div>
+                                    <span className="text-xs font-bold">Vender</span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
@@ -331,20 +377,22 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
                                                 -
                                             </button>
                                         </div>
-                                        <div className="overflow-hidden">
-                                            <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{item.product.name}</p>
-                                            <p className="text-[10px] text-gray-500 dark:text-slate-500 font-mono flex items-center gap-1">
-                                                <Barcode size={10} /> {item.product.sku}
-                                            </p>
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">${item.product.price} c/u</p>
-                                                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-400">Stock: {item.product.stock}</span>
+                                        <div className="overflow-hidden flex-1">
+                                            <p className="text-base font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{item.product.name}</p>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                                    <Barcode size={10} /> {item.product.sku}
+                                                </p>
+                                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">Stock: {item.product.stock}</span>
                                             </div>
+                                            <p className="text-sm font-black text-blue-600 dark:text-blue-400 mt-1">${item.product.price} <span className="text-[10px] font-normal text-slate-400">c/u</span></p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3 pl-2">
-                                        <span className="font-bold text-slate-800 dark:text-slate-200">${item.product.price * item.qty}</span>
-                                        <button onClick={() => removeFromCart(idx)} className="text-gray-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full">
+                                    <div className="flex items-center gap-3 pl-2 shrink-0">
+                                        <div className="text-right">
+                                            <p className="text-lg font-black text-slate-900 dark:text-white tracking-tight">${(item.product.price * item.qty).toFixed(2)}</p>
+                                        </div>
+                                        <button onClick={() => removeFromCart(idx)} className="text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full">
                                             <X size={18}/>
                                         </button>
                                     </div>
