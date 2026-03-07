@@ -97,12 +97,25 @@ export const fetchAllData = async (): Promise<AppData> => {
 
     const data = JSON.parse(text);
     
+    const rawProducts = Array.isArray(data.products) ? data.products.map(mapProductFromSheet) : [];
+    
+    // Función genérica para deduplicar por ID
+    const deduplicate = <T extends { id: string }>(items: T[]): T[] => {
+        const map = new Map<string, T>();
+        items.forEach(item => {
+            if (item && item.id && !map.has(item.id)) {
+                map.set(item.id, item);
+            }
+        });
+        return Array.from(map.values());
+    };
+
     const freshData: AppData = {
-        products: Array.isArray(data.products) ? data.products.map(mapProductFromSheet) : [],
-        sales: data.sales || [],
-        customers: data.customers || [],
-        users: data.users || [],
-        apps: data.apps || []
+        products: deduplicate(rawProducts),
+        sales: deduplicate(data.sales || []),
+        customers: deduplicate(data.customers || []),
+        users: deduplicate(data.users || []),
+        apps: deduplicate(data.apps || [])
     };
 
     if (freshData.products.length > 0) {

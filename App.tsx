@@ -12,7 +12,9 @@ import {
   UserCircle,
   Loader2,
   RefreshCw,
-  WifiOff
+  WifiOff,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Product, Sale, Purchase, ViewState, ExternalApp, Customer, User } from './types';
 import Dashboard from './components/Dashboard';
@@ -24,16 +26,9 @@ import CustomersView from './components/CustomersView';
 import SalesView from './components/SalesView';
 import PurchasesView from './components/PurchasesView';
 import InventoryView from './components/InventoryView';
+import ReturnsView from './components/ReturnsView';
 import { fetchAllData, api } from './services/api';
 
-// -- INLINE COMPONENTS --
-const ReturnsView = () => (
-    <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 text-center">
-        <RotateCcw className="w-16 h-16 text-orange-400 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Gestión de Devoluciones</h2>
-        <p className="text-gray-500 max-w-md mx-auto mb-6">Escanea el ticket de venta para iniciar garantía.</p>
-    </div>
-);
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -41,6 +36,10 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('theme');
+    return (saved as 'light' | 'dark') || 'light';
+  });
   
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -53,6 +52,20 @@ const App: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Theme Effect
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   const loadData = async () => {
     setIsSyncing(true);
@@ -227,14 +240,23 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
+    <div className="flex h-screen bg-gray-50 dark:bg-slate-950 overflow-hidden font-sans transition-colors duration-300">
         {/* SIDEBAR */}
-        <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white transition-all duration-300 flex flex-col shadow-xl z-20`}>
+        <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-900/90 dark:backdrop-blur-xl text-white transition-all duration-300 flex flex-col shadow-xl z-20 border-r border-transparent dark:border-slate-800`}>
             <div className="p-4 flex items-center justify-between border-b border-slate-800">
                 {sidebarOpen && <h1 className="font-bold text-xl tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">SistemCaja</h1>}
-                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
-                    {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-                </button>
+                <div className="flex items-center gap-1">
+                    <button 
+                        onClick={toggleTheme}
+                        className="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white"
+                        title={theme === 'light' ? 'Modo Oscuro' : 'Modo Claro'}
+                    >
+                        {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                    </button>
+                    <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
+                        {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                    </button>
+                </div>
             </div>
             
             <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto custom-scrollbar">
@@ -283,10 +305,10 @@ const App: React.FC = () => {
         </aside>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 flex flex-col relative overflow-hidden">
+        <main className="flex-1 flex flex-col relative overflow-hidden dark:bg-slate-950">
             {/* Top Bar for Sync Status */}
-            <div className="bg-white border-b border-gray-200 px-6 py-2 flex justify-between items-center h-14 shrink-0">
-                <div className="flex items-center gap-2 text-sm text-gray-500">
+            <div className="bg-white dark:bg-slate-900/50 border-b border-gray-200 dark:border-slate-800 px-6 py-2 flex justify-between items-center h-14 shrink-0 transition-colors">
+                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-slate-400">
                     {isSyncing ? (
                         <>
                             <Loader2 size={14} className="animate-spin text-blue-500" />
@@ -300,14 +322,14 @@ const App: React.FC = () => {
                     )}
                 </div>
                 {!isSyncing && !isLoading && products.length === 0 && (
-                     <div className="flex items-center gap-2 text-xs text-red-500 bg-red-50 px-3 py-1 rounded-full">
+                     <div className="flex items-center gap-2 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-full">
                         <WifiOff size={12} />
                         Modo Offline / Sin Datos
                      </div>
                 )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar relative">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar relative dark:bg-metallic-shine">
                 {renderContent()}
             </div>
             
