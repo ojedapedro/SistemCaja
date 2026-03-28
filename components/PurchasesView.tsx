@@ -47,7 +47,7 @@ const PurchasesView: React.FC<PurchasesViewProps> = ({ onPurchase }) => {
     }
 
     const newItem: PurchaseItem = {
-        id: Date.now().toString(),
+        id: imei ? imei : Date.now().toString(),
         imei: imei || 'N/A',
         category,
         description,
