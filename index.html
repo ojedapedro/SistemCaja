@@ -7,12 +7,30 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
             colors: {
               primary: '#2563eb', // Blue 600
               secondary: '#475569', // Slate 600
               accent: '#0f172a', // Slate 900
+              metallic: {
+                50: '#f8fafc',
+                100: '#f1f5f9',
+                200: '#e2e8f0',
+                300: '#cbd5e1',
+                400: '#94a3b8',
+                500: '#64748b',
+                600: '#475569',
+                700: '#334155',
+                800: '#1e293b',
+                900: '#0f172a',
+                950: '#020617',
+              }
+            },
+            backgroundImage: {
+              'metallic-gradient': 'linear-gradient(135deg, #334155 0%, #1e293b 50%, #0f172a 100%)',
+              'metallic-shine': 'linear-gradient(45deg, transparent 25%, rgba(255,255,255,0.05) 50%, transparent 75%)',
             }
           }
         }

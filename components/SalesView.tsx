@@ -3,20 +3,23 @@ import { Product, Sale, Customer } from '../types';
 import { 
     ShoppingCart, Smartphone, CheckCircle, CreditCard, 
     Smartphone as PhoneIcon, Printer, Share2, 
-    User, X, MapPin, Mail, Barcode, ScanBarcode, Package
+    User, X, MapPin, Mail, Barcode, ScanBarcode, Package,
+    History, Calendar
 } from 'lucide-react';
 
 interface SalesViewProps {
   products: Product[];
   customers: Customer[];
+  sales: Sale[];
   onSale: (sale: Sale, customer?: Customer) => void;
 }
 
-const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) => {
+const SalesView: React.FC<SalesViewProps> = ({ products, customers, sales, onSale }) => {
     // --- ESTADO ---
     const [cart, setCart] = useState<{product: Product, qty: number}[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState<Product[]>([]);
+    const [showHistory, setShowHistory] = useState(false);
     
     // Datos Completos del Cliente
     const [customerData, setCustomerData] = useState<Customer>({
@@ -203,6 +206,114 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
         setTimeout(() => searchInputRef.current?.focus(), 100);
     };
 
+    // --- RENDERIZADO DEL MODAL HISTORIAL ---
+    const renderHistoryModal = () => (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden shadow-2xl flex flex-col animate-in zoom-in duration-200 border border-slate-200 dark:border-slate-800">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                            <History size={24} />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Historial de Ventas</h2>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Registro de todas las transacciones realizadas</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => setShowHistory(false)}
+                        className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-500 dark:text-slate-400"
+                    >
+                        <X size={24} />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                    {sales.length === 0 ? (
+                        <div className="h-64 flex flex-col items-center justify-center text-slate-400 dark:text-slate-600">
+                            <ShoppingCart size={48} className="mb-4 opacity-20" />
+                            <p className="text-lg font-medium">No hay ventas registradas aún</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {[...sales].reverse().map(sale => (
+                                <div key={sale.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm hover:border-blue-300 dark:hover:border-blue-800 transition-colors">
+                                    <div className="p-4 flex flex-wrap justify-between items-center gap-4 bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-xs font-mono bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300">
+                                                ID: {sale.id}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 font-medium">
+                                                <Calendar size={14} />
+                                                {new Date(sale.date).toLocaleString('es-VE')}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total</span>
+                                            <span className="text-xl font-black text-blue-600 dark:text-blue-400">${sale.total.toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div>
+                                            <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">Cliente</h4>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                                                    <User size={16} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{sale.customerName}</p>
+                                                    <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{sale.customerId}</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-4 flex gap-4">
+                                                <div>
+                                                    <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Método</h4>
+                                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">
+                                                        {sale.paymentMethod}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Tasa</h4>
+                                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                                                        Bs. {sale.exchangeRate}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">Productos</h4>
+                                            <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar pr-2">
+                                                {sale.items.map((item, i) => (
+                                                    <div key={i} className="flex justify-between text-xs border-b border-slate-50 dark:border-slate-800 pb-1 last:border-0">
+                                                        <span className="text-slate-600 dark:text-slate-300 font-medium">
+                                                            <span className="font-bold text-blue-500 dark:text-blue-400">{item.quantity}x</span> {item.name}
+                                                        </span>
+                                                        <span className="text-slate-400 dark:text-slate-500 font-mono">
+                                                            ${(item.priceAtSale * item.quantity).toFixed(2)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+                
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                    <button 
+                        onClick={() => setShowHistory(false)}
+                        className="px-6 py-2 bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white font-bold rounded-xl transition-all"
+                    >
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     // --- RENDERIZADO DEL MODAL RECIBO ---
     const renderReceiptModal = () => (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
@@ -231,11 +342,19 @@ const SalesView: React.FC<SalesViewProps> = ({ products, customers, onSale }) =>
     return (
         <div className="h-full flex flex-col md:flex-row gap-4 p-4 bg-slate-100 dark:bg-slate-950 transition-colors duration-300">
             {showReceipt && renderReceiptModal()}
+            {showHistory && renderHistoryModal()}
 
             {/* IZQUIERDA: ESCANER (SIN CATALOGO) */}
             <div className="flex-[2] flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-full transition-colors">
                 {/* Header Search */}
                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex gap-4 items-center bg-slate-50 dark:bg-slate-800/50">
+                    <button 
+                        onClick={() => setShowHistory(true)}
+                        className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-900/50 transition-all shadow-sm group"
+                        title="Ver Historial de Ventas"
+                    >
+                        <History size={24} className="group-hover:rotate-[-12deg] transition-transform" />
+                    </button>
                     <div className="relative flex-1">
                         <ScanBarcode className="absolute left-3 top-3 text-blue-500" size={20}/>
                         <input 

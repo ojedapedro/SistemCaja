@@ -228,7 +228,7 @@ const App: React.FC = () => {
   const renderContent = () => {
       switch (currentView) {
           case 'dashboard': return <Dashboard sales={sales} />;
-          case 'sales': return <SalesView products={products} customers={customers} onSale={handleNewSale} />;
+          case 'sales': return <SalesView products={products} customers={customers} sales={sales} onSale={handleNewSale} />;
           case 'purchases': return <PurchasesView onPurchase={handlePurchase} />;
           case 'inventory': return <InventoryView products={products} onUpdateStock={handleUpdateStock} />;
           case 'customers': return <CustomersView customers={customers} onAddCustomer={handleAddCustomer} />;

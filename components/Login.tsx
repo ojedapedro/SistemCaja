@@ -17,8 +17,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, users }) => {
     if (e) e.preventDefault();
     setError('');
 
-    const inputUser = username.trim(); 
-    const inputPass = password.trim();
+    const inputUser = String(username || '').trim(); 
+    const inputPass = String(password || '').trim();
 
     const user = users.find(u => {
         const dbUser = String(u.username || '').trim();
@@ -36,8 +36,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, users }) => {
   const handleQuickLogin = (role: string) => {
     const user = users.find(u => u.role === role);
     if (user) {
-      setUsername(user.username);
-      setPassword(user.password || '');
+      setUsername(String(user.username || ''));
+      setPassword(String(user.password || ''));
     }
   };
 
